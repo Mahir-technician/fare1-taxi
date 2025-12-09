@@ -1,27 +1,29 @@
-import type { Metadata } from "next";
-import { Inter, Montserrat } from "next/font/google";
-import "./globals.css";
-// Mapbox CSS 
-import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Config } from "tailwindcss";
 
-const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
-const montserrat = Montserrat({ subsets: ["latin"], variable: '--font-montserrat' });
-
-export const metadata: Metadata = {
-  title: "FARE 1 TAXI - Premium Transfers",
-  description: "Safe Ride, Best Price. Airport Transfers UK.",
+const config: Config = {
+  content: [
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        "primary-black": "#0f0f0f", 
+        "primary-gold": "#C6A87C",
+        "secondary-dark": "#1a1a1a",
+      },
+      fontFamily: {
+        sans: ['var(--font-inter)'],
+        montserrat: ['var(--font-montserrat)'],
+      },
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+        "gradient-conic":
+          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
+      },
+    },
+  },
+  plugins: [],
 };
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <html lang="en">
-      <body className={`${inter.variable} ${montserrat.variable} font-sans bg-primary-black text-gray-200`}>
-        {children}
-      </body>
-    </html>
-  );
-}
+export default config;

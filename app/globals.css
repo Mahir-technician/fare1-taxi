@@ -4,70 +4,47 @@
 
 :root {
   --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 5, 5, 5;
-  --background-end-rgb: 5, 5, 5;
+  --background-start-rgb: 15, 15, 15;
+  --background-end-rgb: 0, 0, 0;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #121212; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #D4AF37; }
-
-/* Mapbox Filters for Dark Mode */
-.mapboxgl-canvas {
-    filter: grayscale(100%) invert(10%) contrast(110%);
-}
-.mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right {
-    display: none !important;
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
 }
 
-/* Vehicle Scroll */
-.vehicle-scroll {
-    cursor: grab;
-    scrollbar-width: none;
-}
-.vehicle-scroll::-webkit-scrollbar { display: none; }
-
-/* Unified Input Styles */
-.unified-input {
-    background: #000000;
-    border: 1px solid rgba(212, 175, 55, 0.35);
-    transition: all 0.3s ease;
-}
-.unified-input:focus-within {
-    border-color: #D4AF37;
-    box-shadow: 0 0 15px rgba(212, 175, 55, 0.15);
+/* Mapbox Customization to fit dark theme */
+.mapboxgl-popup-content {
+  background-color: #1a1a1a !important;
+  color: #fff !important;
+  border: 1px solid #C6A87C;
 }
 
-/* Review Card Hover Effect */
-.review-card {
-    transition: all 0.3s ease;
-}
-.review-card:hover {
-    border-color: rgba(212, 175, 55, 0.5);
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+.mapboxgl-ctrl-geocoder {
+  background-color: #333 !important;
+  color: white !important;
 }
 
-/* Glow Animation Wrapper */
-.glow-wrapper {
-    position: relative;
-    overflow: hidden;
-    padding: 1.5px;
-    border-radius: 9999px;
+.mapboxgl-ctrl-geocoder--input {
+  color: white !important;
 }
-.glow-wrapper::before {
-    content: '';
-    position: absolute;
-    top: -50%; left: -50%;
-    width: 200%; height: 200%;
-    background: conic-gradient(transparent, transparent, #DAA520, #F6E7C1, #DAA520, transparent);
-    animation: border-spin 4s linear infinite;
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
 }
-.glow-content {
-    position: relative;
-    background: #0D0D0D;
-    z-index: 1;
-    border-radius: inherit;
+::-webkit-scrollbar-track {
+  background: #0f0f0f;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C6A87C;
 }
