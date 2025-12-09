@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
@@ -7,7 +7,6 @@ import { Car, MapPin, Phone, ShieldCheck, Star, Menu, X, Plane, Users, Briefcase
 
 // --- CONFIGURATION ---
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
-mapboxgl.accessToken = MAPBOX_TOKEN;
 
 // --- DATA ---
 const VEHICLES = [
@@ -72,10 +71,13 @@ export default function Home() {
   // Mapbox Init
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
+    
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/dark-v11",
-      center: [-0.1276, 51.5074],
+      center: [-1.4043, 50.9097], // Southampton Coordinates default
       zoom: 11,
       attributionControl: false,
     });
@@ -140,39 +142,57 @@ export default function Home() {
   };
 
   const calculateRoute = async () => {
-    if (!coords.pickup || !coords.dropoff) return;
-
-    const query = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${coords.pickup.join(',')};${coords.dropoff.join(',')}?geometries=geojson&access_token=${MAPBOX_TOKEN}`);
-    const data = await query.json();
-
-    if (data.routes && data.routes[0]) {
-      const route = data.routes[0];
-      const distMiles = route.distance / 1609.34;
-      setDistance(distMiles);
-
-      // Draw Route
-      if (map.current) {
-        const geojson: any = { type: 'Feature', properties: {}, geometry: route.geometry };
-        if (map.current.getSource('route')) {
-          (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData(geojson);
-        } else {
-          map.current.addLayer({
-            id: 'route',
-            type: 'line',
-            source: { type: 'geojson', data: geojson },
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
-          });
-        }
-        
-        // Fit bounds
-        const bounds = new mapboxgl.LngLatBounds();
-        bounds.extend(coords.pickup);
-        bounds.extend(coords.dropoff);
-        map.current.fitBounds(bounds, { padding: 80 });
-      }
-    }
+    // Wait for state update to reflect in coords ref if needed, but here we depend on next render cycle or use the feature directly. 
+    // Better to check if both exist in state directly.
+    // NOTE: coords state update is async, so we might need a useEffect or pass values directly. 
+    // For now, let's rely on the user selecting the second point triggering a re-render/effect if we put it in useEffect, 
+    // OR just wait for the user to select.
+    // Actually, selectLocation updates state, so calculateRoute using `coords` state immediately might use old state.
+    // FIX: We will call calculateRoute inside a useEffect dependent on coords.
   };
+
+  // Trigger route calc when coords change
+  useEffect(() => {
+    const fetchRoute = async () => {
+        if (!coords.pickup || !coords.dropoff) return;
+
+        try {
+            const query = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${coords.pickup.join(',')};${coords.dropoff.join(',')}?geometries=geojson&access_token=${MAPBOX_TOKEN}`);
+            const data = await query.json();
+    
+            if (data.routes && data.routes[0]) {
+            const route = data.routes[0];
+            const distMiles = route.distance / 1609.34;
+            setDistance(distMiles);
+    
+            // Draw Route
+            if (map.current) {
+                const geojson: any = { type: 'Feature', properties: {}, geometry: route.geometry };
+                if (map.current.getSource('route')) {
+                (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData(geojson);
+                } else {
+                map.current.addLayer({
+                    id: 'route',
+                    type: 'line',
+                    source: { type: 'geojson', data: geojson },
+                    layout: { 'line-join': 'round', 'line-cap': 'round' },
+                    paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
+                });
+                }
+                
+                // Fit bounds
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend(coords.pickup);
+                bounds.extend(coords.dropoff);
+                map.current.fitBounds(bounds, { padding: 80 });
+            }
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+    fetchRoute();
+  }, [coords]);
 
   // Handle Booking Redirect (Like original goToBooking)
   const handleBookRide = () => {
@@ -203,7 +223,7 @@ export default function Home() {
       <nav className={`fixed z-50 w-full transition-all duration-300 ${isScrolled ? 'top-4' : 'top-0'}`}>
         <div className={`mx-auto transition-all duration-300 ${isScrolled ? 'max-w-4xl' : 'w-full'}`}>
           <div className="glow-wrapper">
-            <div className="glow-content bg-secondary-black flex items-center justify-between px-6 py-4 shadow-2xl">
+            <div className="glow-content bg-secondary-black flex items-center justify-between px-6 py-4 shadow-2xl border border-brand-gold/10 rounded-xl">
               
               <Link href="/" className="flex items-center gap-2 group">
                 <Car className="text-brand-gold w-8 h-8" />
@@ -231,7 +251,7 @@ export default function Home() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="absolute top-20 left-0 w-full bg-secondary-black border-b border-brand-gold/20 p-6 md:hidden animate-fade-in">
+          <div className="absolute top-20 left-0 w-full bg-secondary-black border-b border-brand-gold/20 p-6 md:hidden animate-fade-in z-50">
             <div className="flex flex-col gap-4">
               <Link href="/" className="text-brand-gold font-bold">Home</Link>
               <Link href="/services" className="text-gray-300">Services</Link>
@@ -255,7 +275,7 @@ export default function Home() {
             <div className="grid md:grid-cols-2 gap-4 mb-6 relative">
               <div className="space-y-4">
                 <div className="relative group">
-                  <div className="unified-input rounded-xl flex items-center h-14 px-4 bg-black">
+                  <div className="unified-input rounded-xl flex items-center h-14 px-4 bg-black border border-white/10 focus-within:border-brand-gold transition-colors">
                     <MapPin className="text-brand-gold w-5 h-5 mr-3" />
                     <input 
                       type="text" 
@@ -278,7 +298,7 @@ export default function Home() {
                 </div>
 
                 <div className="relative group">
-                  <div className="unified-input rounded-xl flex items-center h-14 px-4 bg-black">
+                  <div className="unified-input rounded-xl flex items-center h-14 px-4 bg-black border border-white/10 focus-within:border-brand-gold transition-colors">
                     <MapPin className="text-red-500 w-5 h-5 mr-3" />
                     <input 
                       type="text" 
@@ -304,10 +324,10 @@ export default function Home() {
               {/* Options */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Passengers */}
-                <div className="unified-input rounded-xl flex items-center px-4 bg-black">
+                <div className="unified-input rounded-xl flex items-center px-4 bg-black border border-white/10">
                   <Users className="text-gray-500 w-4 h-4 mr-2" />
                   <select 
-                    className="bg-transparent w-full h-full outline-none text-white text-sm appearance-none"
+                    className="bg-transparent w-full h-full outline-none text-white text-sm appearance-none cursor-pointer"
                     value={passengers}
                     onChange={(e) => setPassengers(parseInt(e.target.value))}
                   >
@@ -315,10 +335,10 @@ export default function Home() {
                   </select>
                 </div>
                 {/* Luggage */}
-                <div className="unified-input rounded-xl flex items-center px-4 bg-black">
+                <div className="unified-input rounded-xl flex items-center px-4 bg-black border border-white/10">
                   <Briefcase className="text-gray-500 w-4 h-4 mr-2" />
                   <select 
-                    className="bg-transparent w-full h-full outline-none text-white text-sm appearance-none"
+                    className="bg-transparent w-full h-full outline-none text-white text-sm appearance-none cursor-pointer"
                     value={luggage}
                     onChange={(e) => setLuggage(parseInt(e.target.value))}
                   >
@@ -326,7 +346,7 @@ export default function Home() {
                   </select>
                 </div>
                 {/* Flight Number */}
-                <div className="unified-input rounded-xl flex items-center px-4 bg-black h-12">
+                <div className="unified-input rounded-xl flex items-center px-4 bg-black h-12 border border-white/10">
                   <Plane className="text-gray-500 w-4 h-4 mr-2" />
                   <input 
                     type="text" 
@@ -347,7 +367,7 @@ export default function Home() {
                   </div>
                 </div>
                 {/* Date Time */}
-                <div className="col-span-2 unified-input rounded-xl flex items-center px-4 bg-black h-12">
+                <div className="col-span-2 unified-input rounded-xl flex items-center px-4 bg-black h-12 border border-white/10">
                   <input 
                     type="datetime-local" 
                     className="bg-transparent w-full h-full outline-none text-white text-sm uppercase" 
@@ -372,9 +392,8 @@ export default function Home() {
                         : 'border-white/10 bg-black/40 hover:border-white/30'
                     }`}
                   >
-                    <div className="h-16 mb-2 relative">
-                        {/* Note: Using standard img tag for external URLs without config */}
-                        <img src={v.image} alt={v.name} className="w-full h-full object-contain" />
+                    <div className="h-16 mb-2 relative flex items-center justify-center">
+                        <img src={v.image} alt={v.name} className="w-auto h-full object-contain" onError={(e) => e.currentTarget.style.display='none'} />
                     </div>
                     <h4 className="text-xs font-bold text-white mb-1">{v.name}</h4>
                     <div className="flex justify-between text-[10px] text-gray-400">
