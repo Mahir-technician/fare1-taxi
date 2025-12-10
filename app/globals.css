@@ -1,9 +1,10 @@
-/* globals.css */
+/* Google Fonts must be loaded before anything else — MUST BE ON TOP */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap');
+
+/* Tailwind Layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap');
 
 /* Gold Gradient Text */
 .text-gradient-gold {
@@ -171,8 +172,8 @@ html, body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transpare
 
 /* Unified Input */
 .unified-input {
-  background: #000000; /* Darker than sheet for contrast */
-  border: 1px solid rgba(212, 175, 55, 0.35); /* Thin Gold Border */
+  background: #000000;
+  border: 1px solid rgba(212, 175, 55, 0.35);
   color: white;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -191,7 +192,7 @@ html, body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transpare
 
 /* Floating Sheet - REMOVED BLUR FOR PERFORMANCE */
 .floating-sheet {
-  background-color: #121212; /* Solid color fixes scroll lag */
+  background-color: #121212;
   transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
   will-change: transform;
 }
@@ -211,8 +212,8 @@ html, body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transpare
   transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform;
 }
-.bottom-bar.visible { transform: translateY(0); } /* Shows when inputs filled */
-.bottom-bar.hidden-scroll { transform: translateY(120%); } /* Hides on scroll */
+.bottom-bar.visible { transform: translateY(0); }
+.bottom-bar.hidden-scroll { transform: translateY(120%); }
 
 /* Connector Line */
 .connector-line {
@@ -220,7 +221,7 @@ html, body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transpare
   border-left: 1px dashed rgba(212, 175, 55, 0.4); z-index: 0;
 }
 
-/* Offers Styles (from why choose us) */
+/* Offers Styles */
 .price-card {
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -229,18 +230,18 @@ html, body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transpare
   border-color: #D4AF37;
 }
 
-/* Reviews Styles (from feedback) */
+/* Reviews Styles */
 .review-scroll {
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: none;
   cursor: grab;
 }
 .review-scroll::-webkit-scrollbar { display: none; }
 .review-scroll:active { cursor: grabbing; }
-/* Review Card Premium Style */
+
 .review-card {
   background: #121212;
-  border: 1px solid rgba(212, 175, 55, 0.15); /* Thin Gold Border */
+  border: 1px solid rgba(212, 175, 55, 0.15);
   transition: all 0.3s ease;
 }
 .review-card:hover {
