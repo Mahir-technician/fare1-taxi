@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import * as mapboxgl from 'mapbox-gl';
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
 
@@ -85,13 +86,13 @@ export default function Home() {
   const [distanceDisplay, setDistanceDisplay] = useState('0 mi');
   const [distanceHidden, setDistanceHidden] = useState(true);
 
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
-  const startMarker = useRef<any>(null);
-  const endMarker = useRef<any>(null);
-  const stopMarkers = useRef<any>({});
+  const startMarker = useRef<mapboxgl.Marker | null>(null);
+  const endMarker = useRef<mapboxgl.Marker | null>(null);
+  const stopMarkers = useRef<{ [key: string]: mapboxgl.Marker }>({});
   const routeWaypoints = useRef<{ pickup: number[] | null, dropoff: number[] | null, stops: (number[] | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -104,8 +105,8 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    window.mapboxgl.accessToken = MAPBOX_TOKEN;
-    mapRef.current = new window.mapboxgl.Map({
+    (mapboxgl as any).accessToken = MAPBOX_TOKEN;
+    mapRef.current = new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/dark-v11',
       center: [-0.1276, 51.5074],
@@ -114,7 +115,7 @@ export default function Home() {
       pitchWithRotate: false
     });
     mapRef.current.scrollZoom.disable();
-    mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
+    mapRef.current.on('touchstart', () => mapRef.current!.dragPan.enable());
 
     const sheet = mainSheetRef.current;
     if (sheet) {
@@ -143,7 +144,7 @@ export default function Home() {
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
-    if (!filtered.find((v, i) => i === selectedVehicleIndex)) {
+    if (filtered.length > 0 && !filtered.some((v, i) => i === selectedVehicleIndex)) {
       setSelectedVehicleIndex(0);
     }
   }, [pax, bags]);
@@ -215,7 +216,9 @@ export default function Home() {
       const idx = parseInt(type.split('-')[1]) - 1;
       routeWaypoints.current.stops[idx] = null;
     }
-    clearTimeout(debounceTimer.current);
+    if (debounceTimer.current !== null) {
+      clearTimeout(debounceTimer.current);
+    }
     if (value.length === 0) {
       showPresets(type);
       return;
@@ -245,21 +248,21 @@ export default function Home() {
       setPickup(name);
       routeWaypoints.current.pickup = coords;
       if (startMarker.current) startMarker.current.remove();
-      startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current);
-      mapRef.current.flyTo({ center: coords, zoom: 13 });
+      startMarker.current = new mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current!);
+      mapRef.current!.flyTo({ center: coords, zoom: 13 });
       setPickupSuggestions([]);
     } else if (type === 'dropoff') {
       setDropoff(name);
       routeWaypoints.current.dropoff = coords;
       if (endMarker.current) endMarker.current.remove();
-      endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current);
+      endMarker.current = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current!);
       setDropoffSuggestions([]);
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
       routeWaypoints.current.stops[idx] = coords;
       if (stopMarkers.current[type]) stopMarkers.current[type].remove();
-      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current);
+      stopMarkers.current[type] = new mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current!);
       setStopSuggestions(prev => ({ ...prev, [type]: [] }));
     }
     collapseSheet();
@@ -271,19 +274,20 @@ export default function Home() {
     let coords = [routeWaypoints.current.pickup];
     routeWaypoints.current.stops.forEach(s => { if (s) coords.push(s); });
     coords.push(routeWaypoints.current.dropoff);
-    const coordString = coords.map(c => c.join(',')).join(';');
+    const coordString = coords.map(c => c!.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
     fetch(url).then(r => r.json()).then(data => {
       if (!data.routes?.length) return;
       const r = data.routes[0];
-      setCurrentDistanceMiles(r.distance / 1609.34);
-      setDistanceDisplay(currentDistanceMiles.toFixed(1) + ' mi');
+      const distMiles = r.distance / 1609.34;
+      setCurrentDistanceMiles(distMiles);
+      setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
-      if (mapRef.current.getSource('route')) mapRef.current.getSource('route').setData(r.geometry);
-      else mapRef.current.addLayer({ id: 'route', type: 'line', source: { type: 'geojson', data: r.geometry }, paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } });
-      const bounds = new window.mapboxgl.LngLatBounds();
-      coords.forEach(c => bounds.extend(c));
-      mapRef.current.fitBounds(bounds, { padding: 80 });
+      if (mapRef.current!.getSource('route')) mapRef.current!.getSource('route').setData(r.geometry);
+      else mapRef.current!.addLayer({ id: 'route', type: 'line', source: { type: 'geojson', data: r.geometry }, paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } });
+      const bounds = new mapboxgl.LngLatBounds();
+      coords.forEach(c => bounds.extend(c!));
+      mapRef.current!.fitBounds(bounds, { padding: 80 });
     });
   };
 
@@ -642,7 +646,6 @@ export default function Home() {
         </div>
       </div>
       <div className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0">
-        {/* Full content from "why choose us" section, including all cards and links */}
         <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
         <div className="absolute inset-0 bg-gradient-to-b from-brand-gold-dark/10 via-transparent to-brand-gold-dark/20 pointer-events-none"></div>
         <div className="w-[90%] mx-auto max-w-7xl relative z-10">
@@ -708,7 +711,109 @@ export default function Home() {
                   <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Gatwick%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
                 </div>
               </div>
-              {/* Add the remaining 6 cards here exactly as in the original "why choose us" section */}
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bristol Airport</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£160</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bristol%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-red-500 text-white text-[10px] font-extrabold px-4 py-1.5 rounded-br-2xl uppercase tracking-widest z-10 shadow-md">Best Value</div>
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bournemouth Airport</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£65</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bournemouth%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Luton / Exeter</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£170</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Stansted Airport</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£220</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Stansted%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">London City Airport</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£190</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=London%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
+              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                <div className="flex justify-between items-end mb-6 opacity-70">
+                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                </div>
+                <div className="flex flex-col gap-1 mb-8 text-center">
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                  <div className="text-brand-gold text-sm my-1">to</div>
+                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Brighton City Airport</div>
+                </div>
+                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£100</span>
+                </div>
+                <div className="mt-8 text-center">
+                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Brighton%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                </div>
+              </div>
             </div>
           </div>
           <div className="border-t border-primary-black/20 pt-16">
@@ -722,7 +827,39 @@ export default function Home() {
               <a href="https://southampton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
                 <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">📍</span> Southampton Taxis
               </a>
-              {/* Add the remaining 11 links here exactly as in the original "why choose us" section */}
+              <a href="https://heathrow.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Heathrow Transfers
+              </a>
+              <a href="https://gatwick.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Gatwick Transfers
+              </a>
+              <a href="https://stansted.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Stansted Taxis
+              </a>
+              <a href="https://luton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Luton Transfers
+              </a>
+              <a href="https://londoncity.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> London City Airport
+              </a>
+              <a href="https://bournemouth.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌊</span> Bournemouth Taxis
+              </a>
+              <a href="https://bristol.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌉</span> Bristol Transfers
+              </a>
+              <a href="https://brighton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🎡</span> Brighton Taxis
+              </a>
+              <a href="https://manchester.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🐝</span> Manchester Taxis
+              </a>
+              <a href="https://birmingham.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> Birmingham Taxis
+              </a>
+              <a href="https://leeds.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🦉</span> Leeds Transfers
+              </a>
             </div>
           </div>
         </div>
