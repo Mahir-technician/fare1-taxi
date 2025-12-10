@@ -1,26 +1,42 @@
-import type { Metadata } from "next";
-import { Inter, Montserrat } from "next/font/google";
-import "./globals.css";
-import 'mapbox-gl/dist/mapbox-gl.css';
+import './globals.css'
+import { Montserrat, Inter, Playfair_Display } from 'next/font/google'
+import Script from 'next/script'
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-montserrat" });
+const montserrat = Montserrat({ subsets: ['latin'], variable: '--font-heading' })
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
 
-export const metadata: Metadata = {
-  title: "Fare1 Taxi - Premium Chauffeur Service",
-  description: "Book premium taxis in Southampton and airport transfers.",
-};
+export const metadata = {
+  title: 'FARE 1 TAXI - Premium Transfers',
+  description: 'Premium Airport Transfers UK',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${montserrat.variable} font-sans bg-primary-black text-gray-200`}>
+      <head>
+        <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
+      </head>
+      <body className={`${montserrat.variable} ${inter.variable} ${playfair.variable} font-sans bg-primary-black`}>
+        
+        {/* Load Google Maps */}
+        <Script 
+          src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDnN4UvcI26jHDKVymDAI7P5f5Pb7StM6w&libraries=places" 
+          strategy="beforeInteractive" 
+        />
+        
+        {/* Load Mapbox */}
+        <Script 
+          src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js" 
+          strategy="beforeInteractive" 
+        />
+
         {children}
       </body>
     </html>
-  );
+  )
 }
