@@ -119,7 +119,7 @@ export default function Home() {
   const routeWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   
-  // --- Scroll Handler (Optimized) ---
+  // --- Scroll Handler (Optimized: No React Re-renders) ---
   const handleSheetScroll = useCallback(() => {
     const sheet = mainSheetRef.current;
     const header = headerRef.current;
@@ -401,6 +401,10 @@ export default function Home() {
   const handleStopChange = (index: number, value: string) => {
     setStops(prev => prev.map((val, i) => i === index ? value : val));
     handleTyping(`stop-${index + 1}`, value);
+  };
+
+  const selectVehicle = (index: number) => {
+    setSelectedVehicleIndex(index);
   };
 
   const getUserLocation = () => {

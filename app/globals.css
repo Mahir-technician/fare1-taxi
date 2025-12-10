@@ -79,4 +79,40 @@ html, body {
 .unified-input:focus-within { border-color: #D4AF37; box-shadow: 0 0 10px rgba(212, 175, 55, 0.2); }
 .unified-input input, .unified-input select { background: transparent; border: none; color: white; width: 100%; height: 100%; outline: none; }
 .unified-input input::placeholder { color: #666; font-weight: 500; }
-.checkbox-wrapper input:checked + div { background: #D4AF37; bo
+.checkbox-wrapper input:checked + div { background: #D4AF37; border-color: #D4AF37; }
+.safe-area-pb { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+
+.floating-sheet {
+    background-color: #121212; 
+    transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+    will-change: transform; /* Hint to browser to use GPU */
+    transform: translate3d(0,0,0); /* Force Hardware Acceleration */
+    -webkit-overflow-scrolling: touch; /* Momentum scrolling on iOS */
+    backface-visibility: hidden; /* Fix flickering */
+}
+.sheet-expanded {
+    margin-top: 0 !important; height: 100% !important; border-radius: 0 !important;
+    padding-top: 50px; z-index: 100 !important; position: fixed; inset: 0;
+}
+.close-sheet-btn { display: none; }
+.sheet-expanded .close-sheet-btn { display: block; }
+.sheet-expanded .drag-handle { display: none; }
+
+.bottom-bar { transform: translateY(120%); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
+.bottom-bar.visible { transform: translateY(0); }
+.bottom-bar.hidden-scroll { transform: translateY(120%); }
+.connector-line {
+    position: absolute; left: 23px; top: 40px; width: 1px; height: 35px;
+    border-left: 1px dashed rgba(212, 175, 55, 0.4); z-index: 0;
+}
+
+/* --- OFFERS & REVIEWS STYLES --- */
+.price-card { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.price-card:hover { transform: translateY(-8px) scale(1.02); border-color: #D4AF37; }
+
+.review-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: none; cursor: grab; }
+.review-scroll::-webkit-scrollbar { display: none; }
+.review-scroll:active { cursor: grabbing; }
+
+.review-card { background: #121212; border: 1px solid rgba(212, 175, 55, 0.15); transition: all 0.3s ease; }
+.review-card:hover { border-color: rgba(212, 175, 55, 0.5); transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
