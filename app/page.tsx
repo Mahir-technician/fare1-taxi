@@ -1,12 +1,33 @@
-// page.tsx
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import * as mapboxgl from 'mapbox-gl';
 
+// --- TypeScript Definitions ---
+type LngLat = [number, number];
+
+interface PresetItem {
+  name: string;
+  center: LngLat;
+}
+
+interface SuggestionItem {
+  text: string;
+  center: LngLat;
+  isHeader?: boolean;
+  name?: string;
+}
+
+declare global {
+  interface Window {
+    mapboxgl: any;
+    google: any;
+  }
+}
+
+// --- Constants ---
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
 
-const PRESET_DATA = {
+const PRESET_DATA: Record<string, PresetItem[]> = {
   'Airports': [
     { name: 'Southampton Airport', center: [-1.3568, 50.9503] },
     { name: 'Heathrow Airport Terminal 2', center: [-0.4497, 51.4696] },
@@ -67,37 +88,50 @@ export default function Home() {
   const [oldPrice, setOldPrice] = useState(0);
   const [promoText, setPromoText] = useState("REACH £130 & GET 15% OFF");
   const [promoClass, setPromoClass] = useState('text-brand-gold');
+  
+  // Inputs
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
   const [stops, setStops] = useState<string[]>([]);
   const [flightNumber, setFlightNumber] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState(new Date().toTimeString().substring(0, 5));
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
   const [meetGreet, setMeetGreet] = useState(false);
   const [pax, setPax] = useState(1);
   const [bags, setBags] = useState(0);
+  
+  // Suggestions
   const [filteredVehicles, setFilteredVehicles] = useState<typeof vehicles>([]);
-  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
-  const [dropoffSuggestions, setDropoffSuggestions] = useState<any[]>([]);
-  const [stopSuggestions, setStopSuggestions] = useState<{ [key: string]: any[] }>({});
+  const [pickupSuggestions, setPickupSuggestions] = useState<SuggestionItem[]>([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState<SuggestionItem[]>([]);
+  const [stopSuggestions, setStopSuggestions] = useState<{ [key: string]: SuggestionItem[] }>({});
+  
+  // Reviews & UI
   const [reviews, setReviews] = useState<any[]>([]);
   const [headerStars, setHeaderStars] = useState('★★★★★');
   const [totalRatings, setTotalRatings] = useState('Loading...');
   const [distanceDisplay, setDistanceDisplay] = useState('0 mi');
   const [distanceHidden, setDistanceHidden] = useState(true);
 
-  const mapRef = useRef<mapboxgl.Map | null>(null);
+  // Refs
+  const mapRef = useRef<any>(null); // Use any to avoid strict Mapbox type collisions in Next.js
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
-  const startMarker = useRef<mapboxgl.Marker | null>(null);
-  const endMarker = useRef<mapboxgl.Marker | null>(null);
-  const stopMarkers = useRef<{ [key: string]: mapboxgl.Marker }>({});
-  const routeWaypoints = useRef<{ pickup: number[] | null, dropoff: number[] | null, stops: (number[] | null)[] }>({ pickup: null, dropoff: null, stops: [] });
+  const startMarker = useRef<any>(null);
+  const endMarker = useRef<any>(null);
+  const stopMarkers = useRef<{ [key: string]: any }>({});
+  const routeWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // Initialize
   useEffect(() => {
+    // Set Date/Time on Client
+    const now = new Date();
+    setDate(now.toISOString().split('T')[0]);
+    setTime(now.toTimeString().substring(0, 5));
+
     const handleScroll = () => {
       const currentScroll = window.scrollY;
       setIsScrolled(currentScroll > 50);
@@ -105,17 +139,20 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    (mapboxgl as any).accessToken = MAPBOX_TOKEN;
-    mapRef.current = new mapboxgl.Map({
-      container: 'map',
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [-0.1276, 51.5074],
-      zoom: 11,
-      attributionControl: false,
-      pitchWithRotate: false
-    });
-    mapRef.current.scrollZoom.disable();
-    mapRef.current.on('touchstart', () => mapRef.current!.dragPan.enable());
+    // Init Mapbox
+    if (window.mapboxgl) {
+      window.mapboxgl.accessToken = MAPBOX_TOKEN;
+      mapRef.current = new window.mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [-0.1276, 51.5074],
+        zoom: 11,
+        attributionControl: false,
+        pitchWithRotate: false
+      });
+      mapRef.current.scrollZoom.disable();
+      mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
+    }
 
     const sheet = mainSheetRef.current;
     if (sheet) {
@@ -158,25 +195,27 @@ export default function Home() {
   }, [routeWaypoints.current.pickup, routeWaypoints.current.dropoff]);
 
   const initReviews = () => {
-    const mapDiv = document.createElement('div');
-    const service = new (window as any).google.maps.places.PlacesService(mapDiv);
-    const request = {
-      placeId: 'ChIJ9caM2nkSsYsRzNAS6kVqn2k',
-      fields: ['reviews', 'rating', 'user_ratings_total']
-    };
-    service.getDetails(request, (place: any, status: any) => {
-      if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && place) {
-        let hStars = '';
-        for (let i = 0; i < 5; i++) {
-          hStars += i < Math.round(place.rating) ? '★' : '<span class="text-gray-700">★</span>';
+    if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
+      const mapDiv = document.createElement('div');
+      const service = new window.google.maps.places.PlacesService(mapDiv);
+      const request = {
+        placeId: 'ChIJ9caM2nkSsYsRzNAS6kVqn2k',
+        fields: ['reviews', 'rating', 'user_ratings_total']
+      };
+      service.getDetails(request, (place: any, status: any) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && place) {
+          let hStars = '';
+          for (let i = 0; i < 5; i++) {
+            hStars += i < Math.round(place.rating) ? '★' : '<span class="text-gray-700">★</span>';
+          }
+          setHeaderStars(hStars);
+          setTotalRatings(`${place.rating} Rating (${place.user_ratings_total} Reviews)`);
+          setReviews(place.reviews || []);
+        } else {
+          setTotalRatings('Unable to load reviews.');
         }
-        setHeaderStars(hStars);
-        setTotalRatings(`${place.rating} Rating (${place.user_ratings_total} Reviews)`);
-        setReviews(place.reviews || []);
-      } else {
-        setTotalRatings('Unable to load reviews.');
-      }
-    });
+      });
+    }
   };
 
   const toggleMenu = () => {
@@ -199,10 +238,10 @@ export default function Home() {
   };
 
   const showPresets = (type: string) => {
-    let list: any[] = [];
+    let list: SuggestionItem[] = [];
     Object.keys(PRESET_DATA).forEach(category => {
-      list.push({ isHeader: true, text: category });
-      (PRESET_DATA as any)[category].forEach((p: any) => list.push(p));
+      list.push({ isHeader: true, text: category, center: [0,0] }); // Dummy center for header
+      PRESET_DATA[category].forEach((p) => list.push({ text: p.name, center: p.center }));
     });
     if (type === 'pickup') setPickupSuggestions(list);
     if (type === 'dropoff') setDropoffSuggestions(list);
@@ -216,7 +255,7 @@ export default function Home() {
       const idx = parseInt(type.split('-')[1]) - 1;
       routeWaypoints.current.stops[idx] = null;
     }
-    if (debounceTimer.current !== null) {
+    if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
     if (value.length === 0) {
@@ -229,12 +268,13 @@ export default function Home() {
       if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: [] }));
       return;
     }
+    
     debounceTimer.current = setTimeout(() => {
       fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=poi,address`)
         .then(r => r.json()).then(data => {
-          let list: any[] = [];
+          let list: SuggestionItem[] = [];
           if (data.features?.length) {
-            data.features.forEach((f: any) => list.push({ text: f.place_name, center: f.center }));
+            data.features.forEach((f: any) => list.push({ text: f.place_name, center: f.center as LngLat }));
           }
           if (type === 'pickup') setPickupSuggestions(list);
           if (type === 'dropoff') setDropoffSuggestions(list);
@@ -243,26 +283,28 @@ export default function Home() {
     }, 300);
   };
 
-  const selectLocation = (type: string, name: string, coords: number[]) => {
+  const selectLocation = (type: string, name: string, coords: LngLat) => {
+    if (!mapRef.current) return;
+
     if (type === 'pickup') {
       setPickup(name);
       routeWaypoints.current.pickup = coords;
       if (startMarker.current) startMarker.current.remove();
-      startMarker.current = new mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current!);
-      mapRef.current!.flyTo({ center: coords, zoom: 13 });
+      startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current);
+      mapRef.current.flyTo({ center: coords, zoom: 13 });
       setPickupSuggestions([]);
     } else if (type === 'dropoff') {
       setDropoff(name);
       routeWaypoints.current.dropoff = coords;
       if (endMarker.current) endMarker.current.remove();
-      endMarker.current = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current!);
+      endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current);
       setDropoffSuggestions([]);
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
       routeWaypoints.current.stops[idx] = coords;
       if (stopMarkers.current[type]) stopMarkers.current[type].remove();
-      stopMarkers.current[type] = new mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current!);
+      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current);
       setStopSuggestions(prev => ({ ...prev, [type]: [] }));
     }
     collapseSheet();
@@ -270,12 +312,15 @@ export default function Home() {
   };
 
   const calculateRoute = () => {
-    if (!routeWaypoints.current.pickup || !routeWaypoints.current.dropoff) return;
-    let coords = [routeWaypoints.current.pickup];
+    if (!routeWaypoints.current.pickup || !routeWaypoints.current.dropoff || !mapRef.current) return;
+    
+    let coords: LngLat[] = [routeWaypoints.current.pickup];
     routeWaypoints.current.stops.forEach(s => { if (s) coords.push(s); });
     coords.push(routeWaypoints.current.dropoff);
-    const coordString = coords.map(c => c!.join(',')).join(';');
+    
+    const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+    
     fetch(url).then(r => r.json()).then(data => {
       if (!data.routes?.length) return;
       const r = data.routes[0];
@@ -283,11 +328,21 @@ export default function Home() {
       setCurrentDistanceMiles(distMiles);
       setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
-      if (mapRef.current!.getSource('route')) mapRef.current!.getSource('route').setData(r.geometry);
-      else mapRef.current!.addLayer({ id: 'route', type: 'line', source: { type: 'geojson', data: r.geometry }, paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } });
-      const bounds = new mapboxgl.LngLatBounds();
-      coords.forEach(c => bounds.extend(c!));
-      mapRef.current!.fitBounds(bounds, { padding: 80 });
+      
+      if (mapRef.current.getSource('route')) {
+        mapRef.current.getSource('route').setData(r.geometry);
+      } else {
+        mapRef.current.addLayer({ 
+            id: 'route', type: 'line', 
+            source: { type: 'geojson', data: r.geometry }, 
+            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } 
+        });
+      }
+      
+      // Use mapboxgl from window or import to access LngLatBounds
+      const bounds = new window.mapboxgl.LngLatBounds();
+      coords.forEach(c => bounds.extend(c));
+      mapRef.current.fitBounds(bounds, { padding: 80 });
     });
   };
 
@@ -358,10 +413,14 @@ export default function Home() {
   };
 
   const getUserLocation = () => {
-    navigator.geolocation.getCurrentPosition(pos => {
-      selectLocation('pickup', 'Current Location', [pos.coords.longitude, pos.coords.latitude]);
-      setSheetOverlayOpen(false);
-    });
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+            selectLocation('pickup', 'Current Location', [pos.coords.longitude, pos.coords.latitude]);
+            setSheetOverlayOpen(false);
+        });
+    } else {
+        alert('Geolocation is not supported by your browser.');
+    }
   };
 
   const closeSheet = () => {
@@ -402,6 +461,8 @@ export default function Home() {
 
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden">
+      
+      {/* HEADER */}
       <header id="site-header" className={`fixed z-50 transition-all duration-500 ease-in-out ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="glow-wrapper mx-auto">
           <div className="glow-content flex items-center justify-between px-4 sm:px-6 h-16 md:h-20">
@@ -444,12 +505,18 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* MAP BACKGROUND */}
       <div className="fixed inset-0 h-[45vh] z-0">
         <div id="map" className="w-full h-full"></div>
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-primary-black pointer-events-none"></div>
       </div>
+
+      {/* MAIN APP SHEET */}
       <div id="main-sheet" ref={mainSheetRef} className={`relative z-10 mt-[38vh] floating-sheet rounded-t-[2rem] border-t border-brand-gold/20 shadow-2xl flex-1 overflow-y-auto pb-40 ${sheetExpanded ? 'sheet-expanded' : ''}`}>
+        
         <div className="drag-handle w-12 h-1 bg-white/10 rounded-full mx-auto mt-3 mb-5"></div>
+        
         <div className={`close-sheet-btn absolute top-4 right-4 z-50 cursor-pointer p-2 ${sheetExpanded ? 'block' : 'hidden'}`} onClick={collapseSheet}>
           <div className="bg-black/50 rounded-full p-2 border border-brand-gold/30">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -457,8 +524,12 @@ export default function Home() {
             </svg>
           </div>
         </div>
-        <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1">
+
+        {/* BOOKING FORM */}
+        <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
           <div className="space-y-3 relative">
+            
+            {/* PICKUP INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
                 <div className="mr-3 flex-shrink-0 text-brand-gold">
@@ -487,6 +558,8 @@ export default function Home() {
               </ul>
               <div className="connector-line"></div>
             </div>
+
+            {/* STOPS */}
             <div id="stops-container" className="space-y-3 pl-2">
               {stops.map((stop, index) => {
                 const type = `stop-${index + 1}`;
@@ -514,6 +587,8 @@ export default function Home() {
                 );
               })}
             </div>
+
+            {/* DROPOFF INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
                 <div className="mr-3 flex-shrink-0 text-brand-gold">
@@ -539,13 +614,16 @@ export default function Home() {
                 ))}
               </ul>
             </div>
+
             <div id="add-stop-area" className="flex justify-end" style={{display: stops.length >= MAX_STOPS ? 'none' : 'flex'}}>
               <button onClick={addStop} className="text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:text-white transition py-1 px-2 border border-brand-gold/30 rounded">
                 + Add Stop
               </button>
             </div>
           </div>
+
           <div className="h-[1px] w-full bg-white/5"></div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -561,6 +639,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Flight No.</label>
@@ -579,6 +658,7 @@ export default function Home() {
                 </label>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3 sm:col-span-2">
               <div>
                 <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
@@ -602,6 +682,7 @@ export default function Home() {
               </div>
             </div>
           </div>
+
           <div>
             <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
             <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
@@ -616,7 +697,299 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* OFFERS SECTION */}
+        <div className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
+          <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-gold-dark/10 via-transparent to-brand-gold-dark/20 pointer-events-none"></div>
+          <div className="w-[90%] mx-auto max-w-7xl relative z-10">
+            <div className="text-center max-w-5xl mx-auto mb-16 md:mb-20">
+              <p className="text-base md:text-xl font-bold uppercase tracking-[0.2em] mb-3 text-primary-black/80">
+                Why Choose Fare 1 Taxi?
+              </p>
+              <h2 className="text-4xl md:text-6xl lg:text-7xl font-heading font-black mb-6 leading-tight uppercase drop-shadow-xl text-primary-black">
+                Unbeatable <br className="md:hidden"/>
+                <span className="relative inline-block">
+                  Airport Taxi Transfers UK
+                  <span className="absolute -bottom-1 left-0 w-full h-1.5 bg-primary-black/90 hidden md:block"></span>
+                </span>
+              </h2>
+              <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
+                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+              </p>
+              <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
+                At <strong>Fare 1 Taxi</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong>. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
+              </p>
+            </div>
+            <div className="mb-20">
+              <div className="flex items-center justify-center gap-4 md:gap-6 mb-12">
+                <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
+                <h3 className="text-xl md:text-3xl font-heading font-black uppercase tracking-wider text-center text-primary-black drop-shadow-sm">
+                  Exclusive Rates from Southampton
+                </h3>
+                <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 px-2">
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="absolute top-0 right-0 bg-gradient-to-r from-brand-gold to-[#ffeead] text-primary-black text-[10px] font-extrabold px-4 py-1.5 rounded-bl-2xl uppercase tracking-widest z-10 shadow-md">Popular Choice</div>
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Heathrow Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£99</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Heathrow%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Gatwick Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£130</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Gatwick%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bristol Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£160</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bristol%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-red-500 text-white text-[10px] font-extrabold px-4 py-1.5 rounded-br-2xl uppercase tracking-widest z-10 shadow-md">Best Value</div>
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bournemouth Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£65</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bournemouth%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Luton / Exeter</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£170</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Stansted Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£220</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Stansted%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">London City Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£190</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=London%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                  <div className="flex justify-between items-end mb-6 opacity-70">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                  </div>
+                  <div className="flex flex-col gap-1 mb-8 text-center">
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                    <div className="text-brand-gold text-sm my-1">to</div>
+                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Brighton City Airport</div>
+                  </div>
+                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£100</span>
+                  </div>
+                  <div className="mt-8 text-center">
+                    <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Brighton%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-primary-black/20 pt-16">
+              <div className="text-center mb-12">
+                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Service, Nationwide Reach</h3>
+                <p className="text-lg font-medium max-w-3xl mx-auto opacity-80 leading-relaxed text-primary-black">
+                  We are local to you. Fare 1 operates a vast network of dedicated <strong>airport taxi transfer</strong> hubs across the UK. Book directly from your local area for the fastest service.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-center">
+                <a href="https://southampton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">📍</span> Southampton Taxis
+                </a>
+                <a href="https://heathrow.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Heathrow Transfers
+                </a>
+                <a href="https://gatwick.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Gatwick Transfers
+                </a>
+                <a href="https://stansted.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Stansted Taxis
+                </a>
+                <a href="https://luton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Luton Transfers
+                </a>
+                <a href="https://londoncity.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> London City Airport
+                </a>
+                <a href="https://bournemouth.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌊</span> Bournemouth Taxis
+                </a>
+                <a href="https://bristol.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌉</span> Bristol Transfers
+                </a>
+                <a href="https://brighton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🎡</span> Brighton Taxis
+                </a>
+                <a href="https://manchester.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🐝</span> Manchester Taxis
+                </a>
+                <a href="https://birmingham.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> Birmingham Taxis
+                </a>
+                <a href="https://leeds.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
+                  <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🦉</span> Leeds Transfers
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* FEEDBACK SECTION */}
+        <div className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
+          <div className="w-[90%] mx-auto max-w-6xl relative z-10">
+            <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
+              <div className="text-center md:text-left">
+                <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-white mb-2 uppercase tracking-tight">
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#F3E5AB]">Feedback</span>
+                </h2>
+                <p className="text-gray-400 text-sm font-medium tracking-wide">Real experiences from our travelers.</p>
+              </div>
+              <div className="flex items-center gap-4 bg-secondary-black border border-brand-gold/20 px-6 py-3 rounded-full shadow-lg">
+                <div className="bg-white p-1.5 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex text-brand-gold text-sm" dangerouslySetInnerHTML={{__html: headerStars}}></div>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{totalRatings}</span>
+                </div>
+              </div>
+            </div>
+            <div ref={googleReviewsContainerRef} className="review-scroll flex overflow-x-auto gap-5 snap-x pb-10 px-1">
+              {reviews.length > 0 ? reviews.map((r, i) => (
+                <div key={i} className="review-card min-w-[300px] md:min-w-[350px] p-6 rounded-2xl snap-center flex flex-col justify-between relative select-none">
+                  <div className="absolute top-4 right-6 text-brand-gold/10 text-6xl font-serif leading-none">”</div>
+                  <div>
+                    <div className="flex items-center gap-4 mb-4">
+                      <img src={r.profile_photo_url} alt={r.author_name} className="w-12 h-12 rounded-full border border-white/10 object-cover" />
+                      <div>
+                        <h4 className="text-white font-bold text-sm font-heading">{r.author_name}</h4>
+                        <p className="text-[10px] text-gray-500 font-sans">{r.relative_time_description}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 mb-3 text-sm tracking-wide">
+                      {[...Array(5)].map((_, starI) => <span key={starI} className={starI < r.rating ? 'text-brand-gold' : 'text-gray-700'}>★</span>)}
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed font-sans font-light opacity-90 border-t border-white/5 pt-3">
+                      "{r.text.length > 150 ? r.text.substring(0, 150) + '...' : r.text}"
+                    </p>
+                  </div>
+                  <div className="mt-4 flex items-center gap-1 opacity-40">
+                    <div className="w-4 h-4 grayscale opacity-70">
+                      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                    </div>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wider">Verified Review</span>
+                  </div>
+                </div>
+              )) : <div className="text-gray-500 w-full text-center text-sm">No reviews available via API yet.</div>}
+            </div>
+            <div className="flex justify-center mt-6">
+              <a href="https://search.google.com/local/writereview?placeid=ChIJ9caM2nkSsYsRzNAS6kVqn2k" target="_blank" className="group relative bg-transparent border border-brand-gold text-brand-gold font-bold py-3.5 px-8 rounded-xl overflow-hidden transition-all hover:text-black hover:bg-brand-gold">
+                <span className="relative text-sm uppercase tracking-widest flex items-center gap-2">
+                  Write a Review
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </span>
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
+
       <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''} ${bottomBarHiddenScroll ? 'hidden-scroll' : ''}`}>
         <div className="flex justify-between items-center max-w-5xl mx-auto gap-4">
           <div className="flex flex-col justify-center min-w-0">
@@ -635,6 +1008,7 @@ export default function Home() {
           </button>
         </div>
       </div>
+
       <div id="sheet-overlay" className={`fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center transition-opacity duration-300 backdrop-blur-sm ${sheetOverlayOpen ? '' : 'hidden'}`}>
         <div id="location-sheet" className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 shadow-2xl pb-10">
           <div className="w-12 h-12 bg-brand-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-gold border border-brand-gold/20">
@@ -643,293 +1017,6 @@ export default function Home() {
           <h2 className="text-2xl font-black text-white text-center mb-2 font-heading">Where to?</h2>
           <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3 mt-6 shadow-lg">Use My Current Location</button>
           <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
-        </div>
-      </div>
-      <div className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0">
-        <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
-        <div className="absolute inset-0 bg-gradient-to-b from-brand-gold-dark/10 via-transparent to-brand-gold-dark/20 pointer-events-none"></div>
-        <div className="w-[90%] mx-auto max-w-7xl relative z-10">
-          <div className="text-center max-w-5xl mx-auto mb-16 md:mb-20">
-            <p className="text-base md:text-xl font-bold uppercase tracking-[0.2em] mb-3 text-primary-black/80">
-              Why Choose Fare 1 Taxi?
-            </p>
-            <h2 className="text-4xl md:text-6xl lg:text-7xl font-heading font-black mb-6 leading-tight uppercase drop-shadow-xl text-primary-black">
-              Unbeatable <br className="md:hidden"/>
-              <span className="relative inline-block">
-                Airport Taxi Transfers UK
-                <span className="absolute -bottom-1 left-0 w-full h-1.5 bg-primary-black/90 hidden md:block"></span>
-              </span>
-            </h2>
-            <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-              Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
-            </p>
-            <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
-              At <strong>Fare 1 Taxi</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong>. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
-            </p>
-          </div>
-          <div className="mb-20">
-            <div className="flex items-center justify-center gap-4 md:gap-6 mb-12">
-              <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
-              <h3 className="text-xl md:text-3xl font-heading font-black uppercase tracking-wider text-center text-primary-black drop-shadow-sm">
-                Exclusive Rates from Southampton
-              </h3>
-              <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 px-2">
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="absolute top-0 right-0 bg-gradient-to-r from-brand-gold to-[#ffeead] text-primary-black text-[10px] font-extrabold px-4 py-1.5 rounded-bl-2xl uppercase tracking-widest z-10 shadow-md">Popular Choice</div>
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Heathrow Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£99</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Heathrow%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Gatwick Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£130</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Gatwick%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bristol Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£160</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bristol%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-red-500 text-white text-[10px] font-extrabold px-4 py-1.5 rounded-br-2xl uppercase tracking-widest z-10 shadow-md">Best Value</div>
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bournemouth Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£65</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Bournemouth%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Luton / Exeter</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£170</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Stansted Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£220</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Stansted%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">London City Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£190</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=London%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-              <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                <div className="flex justify-between items-end mb-6 opacity-70">
-                  <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                  <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                </div>
-                <div className="flex flex-col gap-1 mb-8 text-center">
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                  <div className="text-brand-gold text-sm my-1">to</div>
-                  <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Brighton City Airport</div>
-                </div>
-                <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                  <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£100</span>
-                </div>
-                <div className="mt-8 text-center">
-                  <a href="https://booking.fare1.co.uk?pickup=Southampton&dropoff=Brighton%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-primary-black/20 pt-16">
-            <div className="text-center mb-12">
-              <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Service, Nationwide Reach</h3>
-              <p className="text-lg font-medium max-w-3xl mx-auto opacity-80 leading-relaxed text-primary-black">
-                We are local to you. Fare 1 operates a vast network of dedicated <strong>airport taxi transfer</strong> hubs across the UK. Book directly from your local area for the fastest service.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-center">
-              <a href="https://southampton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">📍</span> Southampton Taxis
-              </a>
-              <a href="https://heathrow.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Heathrow Transfers
-              </a>
-              <a href="https://gatwick.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Gatwick Transfers
-              </a>
-              <a href="https://stansted.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Stansted Taxis
-              </a>
-              <a href="https://luton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">✈️</span> Luton Transfers
-              </a>
-              <a href="https://londoncity.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> London City Airport
-              </a>
-              <a href="https://bournemouth.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌊</span> Bournemouth Taxis
-              </a>
-              <a href="https://bristol.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🌉</span> Bristol Transfers
-              </a>
-              <a href="https://brighton.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🎡</span> Brighton Taxis
-              </a>
-              <a href="https://manchester.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🐝</span> Manchester Taxis
-              </a>
-              <a href="https://birmingham.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🏙️</span> Birmingham Taxis
-              </a>
-              <a href="https://leeds.airporttaxis24-7.com" className="group bg-primary-black/5 hover:bg-secondary-black hover:text-brand-gold text-primary-black font-bold py-4 px-4 rounded-xl transition-all border border-primary-black/10 text-sm uppercase tracking-wider hover:-translate-y-1 hover:shadow-lg duration-300 flex items-center justify-center">
-                <span className="mr-2 opacity-70 group-hover:opacity-100 transition-opacity">🦉</span> Leeds Transfers
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
-        <div className="w-[90%] mx-auto max-w-6xl relative z-10">
-          <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
-            <div className="text-center md:text-left">
-              <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-white mb-2 uppercase tracking-tight">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#F3E5AB]">Feedback</span>
-              </h2>
-              <p className="text-gray-400 text-sm font-medium tracking-wide">Real experiences from our travelers.</p>
-            </div>
-            <div className="flex items-center gap-4 bg-secondary-black border border-brand-gold/20 px-6 py-3 rounded-full shadow-lg">
-              <div className="bg-white p-1.5 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                </svg>
-              </div>
-              <div className="flex flex-col">
-                <div className="flex text-brand-gold text-sm" dangerouslySetInnerHTML={{__html: headerStars}}></div>
-                <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{totalRatings}</span>
-              </div>
-            </div>
-          </div>
-          <div ref={googleReviewsContainerRef} className="review-scroll flex overflow-x-auto gap-5 snap-x pb-10 px-1">
-            {reviews.length > 0 ? reviews.map((r, i) => (
-              <div key={i} className="review-card min-w-[300px] md:min-w-[350px] p-6 rounded-2xl snap-center flex flex-col justify-between relative select-none">
-                <div className="absolute top-4 right-6 text-brand-gold/10 text-6xl font-serif leading-none">”</div>
-                <div>
-                  <div className="flex items-center gap-4 mb-4">
-                    <img src={r.profile_photo_url} alt={r.author_name} className="w-12 h-12 rounded-full border border-white/10 object-cover" />
-                    <div>
-                      <h4 className="text-white font-bold text-sm font-heading">{r.author_name}</h4>
-                      <p className="text-[10px] text-gray-500 font-sans">{r.relative_time_description}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-1 mb-3 text-sm tracking-wide">
-                    {[...Array(5)].map((_, starI) => <span key={starI} className={starI < r.rating ? 'text-brand-gold' : 'text-gray-700'}>★</span>)}
-                  </div>
-                  <p className="text-gray-300 text-sm leading-relaxed font-sans font-light opacity-90 border-t border-white/5 pt-3">
-                    "{r.text.length > 150 ? r.text.substring(0, 150) + '...' : r.text}"
-                  </p>
-                </div>
-                <div className="mt-4 flex items-center gap-1 opacity-40">
-                  <div className="w-4 h-4 grayscale opacity-70">
-                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                  </div>
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Verified Review</span>
-                </div>
-              </div>
-            )) : <div className="text-gray-500 w-full text-center text-sm">No reviews available via API yet.</div>}
-          </div>
-          <div className="flex justify-center mt-6">
-            <a href="https://search.google.com/local/writereview?placeid=ChIJ9caM2nkSsYsRzNAS6kVqn2k" target="_blank" className="group relative bg-transparent border border-brand-gold text-brand-gold font-bold py-3.5 px-8 rounded-xl overflow-hidden transition-all hover:text-black hover:bg-brand-gold">
-              <span className="relative text-sm uppercase tracking-widest flex items-center gap-2">
-                Write a Review
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-              </span>
-            </a>
-          </div>
         </div>
       </div>
     </div>
