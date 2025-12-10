@@ -104,16 +104,19 @@ export default function Home() {
     // Map Initialization
     window.mapboxgl.accessToken = MAPBOX_TOKEN;
     mapRef.current = new window.mapboxgl.Map({
-      container: 'map',
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [-0.1276, 51.5074],
-      zoom: 11,
-      attributionControl: false,
-      pitchWithRotate: false
-    });
-    mapRef.current.scrollZoom.disable();
-    mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11',
+  center: [-0.1276, 51.5074],
+  zoom: 12,
+  scrollZoom: false,
+  pitchWithRotate: false
+});
 
+// Safely access mapRef.current
+if (mapRef.current) {
+  mapRef.current.scrollZoom.disable();
+  mapRef.current.on('touchstart', () => mapRef.current!.dragPan.enable());
+}
     // Sheet Scroll Handler
     const sheet = mainSheetRef.current;
     const handleSheetScroll = throttle(() => {
