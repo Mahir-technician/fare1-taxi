@@ -1,8 +1,8 @@
 'use client';
 import React, { useEffect, useState, useRef } from 'react';
-import Lenis from '@studio-freight/lenis';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+// import Lenis from '@studio-freight/lenis'; // Removed for preview compatibility
+// import gsap from 'gsap'; // Removed for preview compatibility
+// import { ScrollTrigger } from 'gsap/ScrollTrigger'; // Removed for preview compatibility
 
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
@@ -148,30 +148,7 @@ export default function Home() {
 
   // Initialize
   useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    // Lenis Init for Premium Smooth Scrolling
-    // FIX: Using 'any' type to bypass strict option checking if types mismatch
-    const lenisOptions: any = {
-      duration: 1.2,
-      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      direction: 'vertical',
-      gestureDirection: 'vertical',
-      smooth: true,
-      mouseMultiplier: 1,
-      smoothTouch: false,
-      touchMultiplier: 2,
-      infinite: false,
-    };
-    const lenis = new Lenis(lenisOptions);
-
-    function raf(time: number) {
-      lenis.raf(time);
-      ScrollTrigger.update();
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
+    // GSAP and Lenis initialization removed for preview compatibility
 
     // Set Date/Time on Client
     const now = new Date();
@@ -186,7 +163,7 @@ export default function Home() {
     window.addEventListener('scroll', handleScroll, { passive: true });
 
     // Init Mapbox Outbound
-    if (window.mapboxgl) {
+    if (typeof window !== 'undefined' && window.mapboxgl) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
       mapRef.current = new window.mapboxgl.Map({
         container: 'map',
@@ -221,7 +198,6 @@ export default function Home() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
       if (sheet) sheet.removeEventListener('scroll', () => {});
-      lenis.destroy();
     };
   }, []);
 
@@ -242,38 +218,7 @@ export default function Home() {
     }
   }, [isReturnTrip]);
 
-  // GSAP Animations for Sections
-  useEffect(() => {
-    if (offersRef.current) {
-      gsap.fromTo(offersRef.current, { y: 50, opacity: 0 }, {
-        y: 0,
-        opacity: 1,
-        duration: 1.2,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: offersRef.current,
-          start: 'top 80%',
-          end: 'top 50%',
-          scrub: true,
-        }
-      });
-    }
-
-    if (feedbackRef.current) {
-      gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
-        y: 0,
-        opacity: 1,
-        duration: 1.2,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: feedbackRef.current,
-          start: 'top 80%',
-          end: 'top 50%',
-          scrub: true,
-        }
-      });
-    }
-  }, []);
+  // GSAP Animations removed for preview
 
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
@@ -701,6 +646,7 @@ export default function Home() {
           </div>
         </div>
       </header>
+
       {/* MAP BACKGROUND */}
       <div className="fixed inset-0 h-[45vh] z-0 flex">
         {!showSplitMap ? (
@@ -713,6 +659,7 @@ export default function Home() {
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-primary-black pointer-events-none"></div>
       </div>
+
       {/* MAIN APP SHEET */}
       <div id="main-sheet" ref={mainSheetRef} className={`relative z-10 mt-[38vh] floating-sheet rounded-t-[2rem] border-t border-brand-gold/20 shadow-2xl flex-1 overflow-y-auto pb-40 ${sheetExpanded ? 'sheet-expanded' : ''}`}>
         
@@ -725,7 +672,8 @@ export default function Home() {
             </svg>
           </div>
         </div>
-        {/* BOOKING FORM */}
+
+        {/* BOOKING FORM CONTENT */}
         <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
           <div className="space-y-3 relative">
             
@@ -858,7 +806,8 @@ export default function Home() {
               </div>
             </div>
           </div>
-
+          
+          {/* Return Trip Section */}
           {showReturnAdd && !isReturnTrip && (
             <div className="my-6 flex justify-center">
               <button onClick={() => { setIsReturnTrip(true); setReturnPickup(dropoff); setReturnDropoff(pickup); }} className="flex items-center gap-2 text-brand-gold font-bold text-sm uppercase tracking-widest hover:text-white transition py-2 px-4 border border-brand-gold/30 rounded-full">
@@ -924,6 +873,7 @@ export default function Home() {
                   ))}
                 </ul>
               </div>
+              {/* RETURN EXTRAS */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -960,6 +910,7 @@ export default function Home() {
               </div>
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3 sm:col-span-2 mt-4">
             <div>
               <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
@@ -987,7 +938,7 @@ export default function Home() {
             <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
             <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
               {filteredVehicles.map((v, i) => (
-                <div key={i} onClick={() => selectVehicle(i)} className={`vehicle-card min-w-[130px] w-[130px] p-3 rounded-2xl cursor-pointer snap-center flex flex-col justify-between ${selectedVehicleIndex === i ? 'selected' : ''}`}>
+                <div key={i} onClick={() => setSelectedVehicleIndex(i)} className={`vehicle-card min-w-[130px] w-[130px] p-3 rounded-2xl cursor-pointer snap-center flex flex-col justify-between ${selectedVehicleIndex === i ? 'selected' : ''}`}>
                   <div className="selected-badge absolute top-2 right-2 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase" style={{opacity: selectedVehicleIndex === i ? 1 : 0}}>Selected</div>
                   <div><h4 className="text-white font-bold text-xs mb-0.5">{v.name}</h4><p className="text-[9px] text-gray-400">{v.description}</p></div>
                   <div className="flex-1 flex items-center justify-center py-2"><img src={v.image} className="w-full object-contain" /></div>
@@ -997,6 +948,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+
         {/* OFFERS SECTION */}
         <div ref={offersRef} className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
           <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
@@ -1014,7 +966,7 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Why pay more? We guarantee the <span class="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
                 At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
@@ -1217,6 +1169,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+
         {/* FEEDBACK SECTION */}
         <div ref={feedbackRef} className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
@@ -1240,30 +1193,37 @@ export default function Home() {
             </div>
           </div>
         </div>
+
       </div>
 
       {/* BOTTOM BAR */}
-      <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''}`}>
+      <div id="bottom-bar" ref={bottomBarRef} className="bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)]">
         <div className="flex justify-between items-center max-w-5xl mx-auto gap-4">
           <div className="flex flex-col justify-center min-w-0">
-            <div className={`text-[9px] font-black ${promoClass} mb-0.5 tracking-wider uppercase truncate`}>{promoText}</div>
+            <div id="promo-text" className={`text-[9px] font-black ${promoClass} mb-0.5 tracking-wider uppercase truncate animate-pulse-custom`}>{promoText}</div>
             <div className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">Fare Estimate</div>
-            <p className="text-3xl font-heading font-black text-white">£<span className="text-brand-gold">{totalPrice.toFixed(2)}</span><span className={`text-[10px] text-gray-400 font-medium tracking-normal ${currentDistanceMiles.current > 0 ? '' : 'hidden'}`}>{distanceDisplay}</span></p>
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className={`text-[10px] font-bold text-red-500 line-through opacity-70 ${oldPriceVisible ? '' : 'hidden'}`}>£{oldPrice.toFixed(2)}</span>
+              <p className="text-3xl font-heading font-black text-white tracking-tight leading-none flex items-baseline gap-2">£<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#fff5cc]">{totalPrice.toFixed(2)}</span><span className={`text-[10px] text-gray-400 font-medium tracking-normal ${distanceHidden ? 'hidden' : ''}`}>{distanceDisplay}</span></p>
+            </div>
           </div>
-          <button onClick={goToBooking} className="bg-brand-gold text-black font-extrabold py-2 px-6 rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.3)]">Book Now</button>
+          <button onClick={goToBooking} className="bg-brand-gold text-black font-extrabold py-2 px-6 rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.3)] hover:bg-[#e6c355] transition-transform active:scale-95 text-sm uppercase tracking-wide whitespace-nowrap">
+            Book Now
+          </button>
         </div>
       </div>
 
       {/* LOCATION SHEET OVERLAY */}
-      {sheetOverlayOpen && (
-        <div className="fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10">
-                <h2 className="text-2xl font-black text-white text-center mb-4">Where to?</h2>
-                <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3">Use Current Location</button>
-                <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
-            </div>
+      <div id="sheet-overlay" className={`fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center transition-opacity duration-300 backdrop-blur-sm ${sheetOverlayOpen ? '' : 'hidden'}`}>
+        <div id="location-sheet" className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 shadow-2xl pb-10">
+          <div className="w-12 h-12 bg-brand-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-gold border border-brand-gold/20">
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/></svg>
+          </div>
+          <h2 className="text-2xl font-black text-white text-center mb-2 font-heading">Where to?</h2>
+          <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3 mt-6 shadow-lg">Use My Current Location</button>
+          <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
