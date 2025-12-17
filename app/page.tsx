@@ -1,29 +1,34 @@
-// page.tsx
 'use client';
 import React, { useEffect, useState, useRef } from 'react';
 import Lenis from '@studio-freight/lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
+
 interface PresetItem {
   name: string;
   center: LngLat;
 }
+
 interface SuggestionItem {
   text: string;
   center: LngLat;
   isHeader?: boolean;
   name?: string;
 }
+
 declare global {
   interface Window {
     mapboxgl: any;
     google: any;
   }
 }
+
 // --- Constants ---
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
+
 const PRESET_DATA: Record<string, PresetItem[]> = {
   'Airports': [
     { name: 'Southampton Airport', center: [-1.3568, 50.9503] },
@@ -56,6 +61,7 @@ const PRESET_DATA: Record<string, PresetItem[]> = {
     { name: 'Southampton Town Quay', center: [-1.4060, 50.8960] }
   ]
 };
+
 const vehicles = [
   { name: "Standard Saloon", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/Saloon-2.png", perMile: 1.67, hourly: 25, passengers: 4, luggage: 2, description: "Economic" },
   { name: "Executive Saloon", image: "https://www.fareone.co.uk/wp-content/uploads/2025/12/executive-saloon.png", perMile: 2.25, hourly: 25, passengers: 3, luggage: 2, description: "Mercedes E-Class" },
@@ -67,7 +73,9 @@ const vehicles = [
   { name: "Executive 8 Seater", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/People-Carrier-2.png", perMile: 3.22, hourly: 25, passengers: 8, luggage: 16, description: "Mini Bus" },
   { name: "Accessible", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/Accessible-2.png", perMile: 3.57, hourly: 25, passengers: 3, luggage: 2, description: "WAV" }
 ];
+
 const MAX_STOPS = 3;
+
 export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -82,7 +90,7 @@ export default function Home() {
   const [oldPrice, setOldPrice] = useState(0);
   const [promoText, setPromoText] = useState("REACH £130 & GET 15% OFF");
   const [promoClass, setPromoClass] = useState('text-brand-gold');
- 
+
   // Inputs
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
@@ -93,7 +101,7 @@ export default function Home() {
   const [meetGreet, setMeetGreet] = useState(false);
   const [pax, setPax] = useState(1);
   const [bags, setBags] = useState(0);
- 
+
   // Return Trip
   const [isReturnTrip, setIsReturnTrip] = useState(false);
   const [returnPickup, setReturnPickup] = useState('');
@@ -102,7 +110,7 @@ export default function Home() {
   const [returnDate, setReturnDate] = useState('');
   const [returnTime, setReturnTime] = useState('');
   const [returnMeetGreet, setReturnMeetGreet] = useState(false);
- 
+
   // Suggestions
   const [filteredVehicles, setFilteredVehicles] = useState<typeof vehicles>([]);
   const [pickupSuggestions, setPickupSuggestions] = useState<SuggestionItem[]>([]);
@@ -110,7 +118,7 @@ export default function Home() {
   const [stopSuggestions, setStopSuggestions] = useState<{ [key: string]: SuggestionItem[] }>({});
   const [returnPickupSuggestions, setReturnPickupSuggestions] = useState<SuggestionItem[]>([]);
   const [returnDropoffSuggestions, setReturnDropoffSuggestions] = useState<SuggestionItem[]>([]);
- 
+
   // Reviews & UI
   const [reviews, setReviews] = useState<any[]>([]);
   const [headerStars, setHeaderStars] = useState('★★★★★');
@@ -119,7 +127,7 @@ export default function Home() {
   const [distanceHidden, setDistanceHidden] = useState(true);
   const [returnDistanceMiles, setReturnDistanceMiles] = useState(0);
   const [returnDistanceDisplay, setReturnDistanceDisplay] = useState('0 mi');
- 
+
   // Refs
   const mapRef = useRef<any>(null);
   const returnMapRef = useRef<any>(null);
@@ -137,11 +145,14 @@ export default function Home() {
   const returnRouteWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null }>({ pickup: null, dropoff: null });
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
   // Initialize
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
+
     // Lenis Init for Premium Smooth Scrolling
-    const lenis = new Lenis({
+    // FIX: Using 'any' type to bypass strict option checking if types mismatch
+    const lenisOptions: any = {
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       direction: 'vertical',
@@ -151,23 +162,29 @@ export default function Home() {
       smoothTouch: false,
       touchMultiplier: 2,
       infinite: false,
-    });
+    };
+    const lenis = new Lenis(lenisOptions);
+
     function raf(time: number) {
       lenis.raf(time);
       ScrollTrigger.update();
       requestAnimationFrame(raf);
     }
+
     requestAnimationFrame(raf);
+
     // Set Date/Time on Client
     const now = new Date();
     setDate(now.toISOString().split('T')[0]);
     setTime(now.toTimeString().substring(0, 5));
+
     const handleScroll = () => {
       const currentScroll = window.scrollY;
       setIsScrolled(currentScroll > 50);
       if (currentScroll > 50 && menuOpen) setMenuOpen(false);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
+
     // Init Mapbox Outbound
     if (window.mapboxgl) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -182,6 +199,7 @@ export default function Home() {
       mapRef.current.scrollZoom.disable();
       mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
     }
+
     const sheet = mainSheetRef.current;
     if (sheet) {
       const handleSheetScroll = throttle(() => {
@@ -194,15 +212,19 @@ export default function Home() {
       }, 100);
       sheet.addEventListener('scroll', handleSheetScroll);
     }
+
     enableDragScroll(vehicleContainerRef.current);
     enableDragScroll(googleReviewsContainerRef.current);
+
     initReviews();
+
     return () => {
       window.removeEventListener('scroll', handleScroll);
       if (sheet) sheet.removeEventListener('scroll', () => {});
       lenis.destroy();
     };
   }, []);
+
   // Init Return Map when needed
   useEffect(() => {
     if (isReturnTrip && window.mapboxgl && !returnMapRef.current) {
@@ -219,6 +241,7 @@ export default function Home() {
       returnMapRef.current.on('touchstart', () => returnMapRef.current.dragPan.enable());
     }
   }, [isReturnTrip]);
+
   // GSAP Animations for Sections
   useEffect(() => {
     if (offersRef.current) {
@@ -235,6 +258,7 @@ export default function Home() {
         }
       });
     }
+
     if (feedbackRef.current) {
       gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
         y: 0,
@@ -250,6 +274,7 @@ export default function Home() {
       });
     }
   }, []);
+
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -257,12 +282,15 @@ export default function Home() {
       setSelectedVehicleIndex(0);
     }
   }, [pax, bags]);
+
   useEffect(() => {
     updatePrice();
   }, [currentDistanceMiles, returnDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet]);
+
   useEffect(() => {
     checkVisibility();
   }, [routeWaypoints.current.pickup, routeWaypoints.current.dropoff]);
+
   const initReviews = () => {
     if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
       const mapDiv = document.createElement('div');
@@ -286,12 +314,15 @@ export default function Home() {
       });
     }
   };
+
   const toggleMenu = () => {
     setMenuOpen(!menuOpen);
   };
+
   const collapseSheet = () => {
     setSheetExpanded(false);
   };
+
   const expandSheetAndCloseOthers = (id: string) => {
     setPickupSuggestions([]);
     setDropoffSuggestions([]);
@@ -304,6 +335,7 @@ export default function Home() {
     }
     handleTyping(id, (document.getElementById(id) as HTMLInputElement)?.value || '');
   };
+
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
     Object.keys(PRESET_DATA).forEach(category => {
@@ -316,9 +348,11 @@ export default function Home() {
     if (type === 'return-pickup') setReturnPickupSuggestions(list);
     if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
   };
+
   const handleTyping = (type: string, value: string) => {
     let waypointsRef = routeWaypoints;
-    let setSuggestions;
+    let setSuggestions: any;
+
     if (type === 'pickup') {
       waypointsRef.current.pickup = null;
       setSuggestions = setPickupSuggestions;
@@ -340,6 +374,7 @@ export default function Home() {
     } else {
       return;
     }
+
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
@@ -351,7 +386,7 @@ export default function Home() {
       setSuggestions([]);
       return;
     }
-   
+    
     debounceTimer.current = setTimeout(() => {
       fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=poi,address`)
         .then(r => r.json()).then(data => {
@@ -363,13 +398,15 @@ export default function Home() {
         });
     }, 300);
   };
+
   const selectLocation = (type: string, name: string, coords: LngLat) => {
     let map = mapRef.current;
     let waypoints = routeWaypoints.current;
     let startM = startMarker;
     let endM = endMarker;
-    let setSuggestions;
+    let setSuggestions: any;
     let calculate = calculateRoute;
+
     if (type === 'pickup') {
       setPickup(name);
       waypoints.pickup = coords;
@@ -414,20 +451,22 @@ export default function Home() {
     } else {
       return;
     }
+
     setSuggestions([]);
     collapseSheet();
     calculate();
   };
+
   const calculateRoute = () => {
     if (!routeWaypoints.current.pickup || !routeWaypoints.current.dropoff || !mapRef.current) return;
-   
+    
     let coords: LngLat[] = [routeWaypoints.current.pickup];
     routeWaypoints.current.stops.forEach(s => { if (s) coords.push(s); });
     coords.push(routeWaypoints.current.dropoff);
-   
+    
     const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-   
+    
     fetch(url).then(r => r.json()).then(data => {
       if (!data.routes?.length) return;
       const r = data.routes[0];
@@ -435,57 +474,60 @@ export default function Home() {
       setCurrentDistanceMiles(distMiles);
       setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
-     
+      
       if (mapRef.current.getSource('route')) {
         mapRef.current.getSource('route').setData(r.geometry);
       } else {
-        mapRef.current.addLayer({
-            id: 'route', type: 'line',
-            source: { type: 'geojson', data: r.geometry },
-            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
+        mapRef.current.addLayer({ 
+            id: 'route', type: 'line', 
+            source: { type: 'geojson', data: r.geometry }, 
+            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } 
         });
       }
-     
+      
       const bounds = new window.mapboxgl.LngLatBounds();
       coords.forEach(c => bounds.extend(c));
       mapRef.current.fitBounds(bounds, { padding: 80 });
     });
   };
+
   const calculateReturnRoute = () => {
     if (!returnRouteWaypoints.current.pickup || !returnRouteWaypoints.current.dropoff || !returnMapRef.current) return;
-   
+    
     const coords: LngLat[] = [returnRouteWaypoints.current.pickup, returnRouteWaypoints.current.dropoff];
-   
+    
     const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-   
+    
     fetch(url).then(r => r.json()).then(data => {
       if (!data.routes?.length) return;
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
       setReturnDistanceMiles(distMiles);
       setReturnDistanceDisplay(distMiles.toFixed(1) + ' mi');
-     
+      
       if (returnMapRef.current.getSource('return-route')) {
         returnMapRef.current.getSource('return-route').setData(r.geometry);
       } else {
-        returnMapRef.current.addLayer({
-            id: 'return-route', type: 'line',
-            source: { type: 'geojson', data: r.geometry },
-            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
+        returnMapRef.current.addLayer({ 
+            id: 'return-route', type: 'line', 
+            source: { type: 'geojson', data: r.geometry }, 
+            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } 
         });
       }
-     
+      
       const bounds = new window.mapboxgl.LngLatBounds();
       coords.forEach(c => bounds.extend(c));
       returnMapRef.current.fitBounds(bounds, { padding: 80 });
     });
   };
+
   const addStop = () => {
     if (stops.length >= MAX_STOPS) return;
     setStops([...stops, '']);
     routeWaypoints.current.stops.push(null);
   };
+
   const removeStop = (index: number) => {
     setStops(prev => prev.filter((_, i) => i !== index));
     routeWaypoints.current.stops.splice(index, 1);
@@ -496,13 +538,16 @@ export default function Home() {
     }
     calculateRoute();
   };
+
   const handleStopChange = (index: number, value: string) => {
     setStops(prev => prev.map((val, i) => i === index ? value : val));
     handleTyping(`stop-${index + 1}`, value);
   };
+
   const selectVehicle = (index: number) => {
     setSelectedVehicleIndex(index);
   };
+
   const updatePrice = () => {
     let outboundPrice = 0;
     if (currentDistanceMiles > 0) {
@@ -510,13 +555,16 @@ export default function Home() {
       if (outboundPrice < 5) outboundPrice = 5;
       if (meetGreet) outboundPrice += 5;
     }
+
     let returnPrice = 0;
     if (isReturnTrip && returnDistanceMiles > 0) {
       returnPrice = returnDistanceMiles * vehicles[selectedVehicleIndex].perMile;
       if (returnPrice < 5) returnPrice = 5;
       if (returnMeetGreet) returnPrice += 5;
     }
+
     let p = outboundPrice + returnPrice;
+
     if (p >= 130) {
       setOldPriceVisible(true);
       setOldPrice(p);
@@ -530,11 +578,13 @@ export default function Home() {
     }
     setTotalPrice(p);
   };
+
   const checkVisibility = () => {
     const p = routeWaypoints.current.pickup;
     const d = routeWaypoints.current.dropoff;
     setBottomBarVisible(!!p && !!d);
   };
+
   const swapLocations = () => {
     const tempPickup = pickup;
     setPickup(dropoff);
@@ -549,6 +599,7 @@ export default function Home() {
     }
     calculateRoute();
   };
+
   const getUserLocation = () => {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
@@ -559,9 +610,11 @@ export default function Home() {
         alert('Geolocation is not supported by your browser.');
     }
   };
+
   const closeSheet = () => {
     setSheetOverlayOpen(false);
   };
+
   const enableDragScroll = (s: HTMLElement | null) => {
     if (!s) return;
     let isDown = false, startX = 0, scrollLeft = 0;
@@ -570,6 +623,7 @@ export default function Home() {
     s.addEventListener('mouseleave', () => isDown = false);
     s.addEventListener('mousemove', e => { if (!isDown) return; e.preventDefault(); s.scrollLeft = scrollLeft - (e.pageX - s.offsetLeft - startX) * 2; });
   };
+
   const throttle = (func: Function, limit: number) => {
     let inThrottle = false;
     return function (this: any) {
@@ -582,6 +636,7 @@ export default function Home() {
       }
     }
   };
+
   const goToBooking = () => {
     let url = `https://booking.fare1.co.uk?pickup=${encodeURIComponent(pickup)}&dropoff=${encodeURIComponent(dropoff)}&vehicle=${encodeURIComponent(vehicles[selectedVehicleIndex].name)}&price=${totalPrice.toFixed(2)}&date=${date}&time=${time}&flight=${flightNumber}&meet=${meetGreet}&pax=${pax}&bags=${bags}`;
     stops.forEach((stop, i) => {
@@ -589,16 +644,20 @@ export default function Home() {
         url += `&stop${i + 1}=${encodeURIComponent(stop)}`;
       }
     });
+
     if (isReturnTrip) {
       url += `&returnPickup=${encodeURIComponent(returnPickup)}&returnDropoff=${encodeURIComponent(returnDropoff)}&returnDate=${returnDate}&returnTime=${returnTime}&returnFlight=${returnFlightNumber}&returnMeet=${returnMeetGreet}`;
     }
+
     window.location.href = url;
   };
+
   const showReturnAdd = pickup && dropoff && date && time;
   const showSplitMap = isReturnTrip && returnPickup && returnDropoff;
+
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden">
-     
+      
       {/* HEADER */}
       <header id="site-header" className={`fixed z-50 transition-all duration-500 ease-in-out ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="glow-wrapper mx-auto">
@@ -656,9 +715,9 @@ export default function Home() {
       </div>
       {/* MAIN APP SHEET */}
       <div id="main-sheet" ref={mainSheetRef} className={`relative z-10 mt-[38vh] floating-sheet rounded-t-[2rem] border-t border-brand-gold/20 shadow-2xl flex-1 overflow-y-auto pb-40 ${sheetExpanded ? 'sheet-expanded' : ''}`}>
-       
+        
         <div className="drag-handle w-12 h-1 bg-white/10 rounded-full mx-auto mt-3 mb-5"></div>
-       
+        
         <div className={`close-sheet-btn absolute top-4 right-4 z-50 cursor-pointer p-2 ${sheetExpanded ? 'block' : 'hidden'}`} onClick={collapseSheet}>
           <div className="bg-black/50 rounded-full p-2 border border-brand-gold/30">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -669,7 +728,7 @@ export default function Home() {
         {/* BOOKING FORM */}
         <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
           <div className="space-y-3 relative">
-           
+            
             {/* PICKUP INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
@@ -699,6 +758,7 @@ export default function Home() {
               </ul>
               <div className="connector-line"></div>
             </div>
+
             {/* STOPS */}
             <div id="stops-container" className="space-y-3 pl-2">
               {stops.map((stop, index) => {
@@ -727,6 +787,7 @@ export default function Home() {
                 );
               })}
             </div>
+
             {/* DROPOFF INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
@@ -753,13 +814,16 @@ export default function Home() {
                 ))}
               </ul>
             </div>
+
             <div id="add-stop-area" className="flex justify-end" style={{display: stops.length >= MAX_STOPS ? 'none' : 'flex'}}>
               <button onClick={addStop} className="text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:text-white transition py-1 px-2 border border-brand-gold/30 rounded">
                 + Add Stop
               </button>
             </div>
           </div>
+
           <div className="h-[1px] w-full bg-white/5"></div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -794,6 +858,7 @@ export default function Home() {
               </div>
             </div>
           </div>
+
           {showReturnAdd && !isReturnTrip && (
             <div className="my-6 flex justify-center">
               <button onClick={() => { setIsReturnTrip(true); setReturnPickup(dropoff); setReturnDropoff(pickup); }} className="flex items-center gap-2 text-brand-gold font-bold text-sm uppercase tracking-widest hover:text-white transition py-2 px-4 border border-brand-gold/30 rounded-full">
@@ -917,6 +982,7 @@ export default function Home() {
               </div>
             </div>
           </div>
+
           <div>
             <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
             <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
@@ -948,7 +1014,7 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Cruise Port & Long-Distance Taxi Service - Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Why pay more? We guarantee the <span class="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
                 At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
@@ -1105,7 +1171,7 @@ export default function Home() {
             </div>
             <div className="border-t border-primary-black/20 pt-16">
               <div className="text-center mb-12">
-                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Cruise Port & Long-Distance Taxi Service, Nationwide Reach</h3>
+                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Service, Nationwide Reach</h3>
                 <p className="text-lg font-medium max-w-3xl mx-auto opacity-80 leading-relaxed text-primary-black">
                   We are local to you. Fare 1 operates a vast network of dedicated <strong>airport taxi transfer</strong> hubs across the UK. Book directly from your local area for the fastest service.
                 </p>
@@ -1156,99 +1222,48 @@ export default function Home() {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
           <div className="w-[90%] mx-auto max-w-6xl relative z-10">
             <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
-              <div className="text-center md:text-left">
-                <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-white mb-2 uppercase tracking-tight">
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#F3E5AB]">Feedback</span>
-                </h2>
-                <p className="text-gray-400 text-sm font-medium tracking-wide">Real experiences from our travelers.</p>
-              </div>
-              <div className="flex items-center gap-4 bg-secondary-black border border-brand-gold/20 px-6 py-3 rounded-full shadow-lg">
-                <div className="bg-white p-1.5 rounded-full flex-shrink-0 w-8 h-8 flex items-center justify-center">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                  </svg>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex text-brand-gold text-sm" dangerouslySetInnerHTML={{__html: headerStars}}></div>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{totalRatings}</span>
-                </div>
-              </div>
+                <div className="text-center md:text-left"><h2 className="text-3xl md:text-4xl font-heading font-extrabold text-white mb-2 uppercase tracking-tight">Feedback</h2></div>
+                <div className="flex items-center gap-4 bg-secondary-black border border-brand-gold/20 px-6 py-3 rounded-full shadow-lg"><span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{totalRatings}</span></div>
             </div>
             <div ref={googleReviewsContainerRef} className="review-scroll flex overflow-x-auto gap-5 snap-x pb-10 px-1">
               {reviews.length > 0 ? reviews.map((r, i) => (
                 <div key={i} className="review-card min-w-[300px] md:min-w-[350px] p-6 rounded-2xl snap-center flex flex-col justify-between relative select-none">
-                  <div className="absolute top-4 right-6 text-brand-gold/10 text-6xl font-serif leading-none">”</div>
                   <div>
                     <div className="flex items-center gap-4 mb-4">
                       <img src={r.profile_photo_url} alt={r.author_name} className="w-12 h-12 rounded-full border border-white/10 object-cover" />
-                      <div>
-                        <h4 className="text-white font-bold text-sm font-heading">{r.author_name}</h4>
-                        <p className="text-[10px] text-gray-500 font-sans">{r.relative_time_description}</p>
-                      </div>
+                      <div><h4 className="text-white font-bold text-sm font-heading">{r.author_name}</h4></div>
                     </div>
-                    <div className="flex gap-1 mb-3 text-sm tracking-wide">
-                      {[...Array(5)].map((_, starI) => <span key={starI} className={starI < r.rating ? 'text-brand-gold' : 'text-gray-700'}>★</span>)}
-                    </div>
-                    <p className="text-gray-300 text-sm leading-relaxed font-sans font-light opacity-90 border-t border-white/5 pt-3">
-                      "{r.text.length > 150 ? r.text.substring(0, 150) + '...' : r.text}"
-                    </p>
-                  </div>
-                  <div className="mt-4 flex items-center gap-1 opacity-40">
-                    <div className="w-4 h-4 grayscale opacity-70">
-                      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                      </svg>
-                    </div>
-                    <span className="text-[9px] text-gray-400 uppercase tracking-wider">Verified Review</span>
+                    <p className="text-gray-300 text-sm leading-relaxed font-sans font-light opacity-90 border-t border-white/5 pt-3">"{r.text.substring(0, 150)}..."</p>
                   </div>
                 </div>
-              )) : <div className="text-gray-500 w-full text-center text-sm">No reviews available via API yet.</div>}
-            </div>
-            <div className="flex justify-center mt-6">
-              <a href="https://search.google.com/local/writereview?placeid=ChIJ9caM2nkSsYsRzNAS6kVqn2k" target="_blank" className="group relative bg-transparent border border-brand-gold text-brand-gold font-bold py-3.5 px-8 rounded-xl overflow-hidden transition-all hover:text-black hover:bg-brand-gold">
-                <span className="relative text-sm uppercase tracking-widest flex items-center gap-2">
-                  Write a Review
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                </span>
-              </a>
+              )) : <div className="text-gray-500 w-full text-center text-sm">Loading Reviews...</div>}
             </div>
           </div>
         </div>
       </div>
-      <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''} ${bottomBarHiddenScroll ? 'hidden-scroll' : ''}`}>
+
+      {/* BOTTOM BAR */}
+      <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''}`}>
         <div className="flex justify-between items-center max-w-5xl mx-auto gap-4">
           <div className="flex flex-col justify-center min-w-0">
-            <div id="promo-text" className={`text-[9px] font-black ${promoClass} mb-0.5 tracking-wider uppercase truncate animate-pulse-custom`}>{promoText}</div>
+            <div className={`text-[9px] font-black ${promoClass} mb-0.5 tracking-wider uppercase truncate`}>{promoText}</div>
             <div className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">Fare Estimate</div>
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className={`text-[10px] font-bold text-red-500 line-through opacity-70 ${oldPriceVisible ? '' : 'hidden'}`}>£{oldPrice.toFixed(2)}</span>
-              <p className="text-3xl font-heading font-black text-white tracking-tight leading-none flex items-baseline gap-2">
-                £<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#fff5cc]">{totalPrice.toFixed(2)}</span>
-                <span className={`text-[10px] text-gray-400 font-medium tracking-normal ${distanceHidden ? 'hidden' : ''}`}>{distanceDisplay}</span>
-              </p>
+            <p className="text-3xl font-heading font-black text-white">£<span className="text-brand-gold">{totalPrice.toFixed(2)}</span><span className={`text-[10px] text-gray-400 font-medium tracking-normal ${currentDistanceMiles.current > 0 ? '' : 'hidden'}`}>{distanceDisplay}</span></p>
+          </div>
+          <button onClick={goToBooking} className="bg-brand-gold text-black font-extrabold py-2 px-6 rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.3)]">Book Now</button>
+        </div>
+      </div>
+
+      {/* LOCATION SHEET OVERLAY */}
+      {sheetOverlayOpen && (
+        <div className="fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10">
+                <h2 className="text-2xl font-black text-white text-center mb-4">Where to?</h2>
+                <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3">Use Current Location</button>
+                <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
             </div>
-          </div>
-          <button onClick={goToBooking} className="bg-brand-gold text-black font-extrabold py-2 px-6 rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.3)] hover:bg-[#e6c355] transition-transform active:scale-95 text-sm uppercase tracking-wide whitespace-nowrap">
-            Book Now
-          </button>
         </div>
-      </div>
-      <div id="sheet-overlay" className={`fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center transition-opacity duration-300 backdrop-blur-sm ${sheetOverlayOpen ? '' : 'hidden'}`}>
-        <div id="location-sheet" className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 shadow-2xl pb-10">
-          <div className="w-12 h-12 bg-brand-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-gold border border-brand-gold/20">
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/></svg>
-          </div>
-          <h2 className="text-2xl font-black text-white text-center mb-2 font-heading">Where to?</h2>
-          <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3 mt-6 shadow-lg">Use My Current Location</button>
-          <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
