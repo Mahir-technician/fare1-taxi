@@ -1,8 +1,8 @@
 'use client';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-// import Lenis from '@studio-freight/lenis'; // Removed for preview compatibility
-// import gsap from 'gsap'; // Removed for preview compatibility
-// import { ScrollTrigger } from 'gsap/ScrollTrigger'; // Removed for preview compatibility
+// import Lenis from '@studio-freight/lenis'; 
+// import gsap from 'gsap'; 
+// import { ScrollTrigger } from 'gsap/ScrollTrigger'; 
 
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
@@ -148,9 +148,6 @@ export default function Home() {
 
   // Initialize
   useEffect(() => {
-    // GSAP and Lenis initialization removed for preview compatibility to avoid missing dependency errors.
-    // If you need them in production, ensure they are installed via npm.
-
     // Set Date/Time on Client
     const now = new Date();
     setDate(now.toISOString().split('T')[0]);
@@ -219,24 +216,6 @@ export default function Home() {
     }
   }, [isReturnTrip]);
 
-  // GSAP Animations (Stubbed out for preview compatibility, uncomment in production if GSAP is installed)
-  /*
-  useEffect(() => {
-    if (offersRef.current) {
-      gsap.fromTo(offersRef.current, { y: 50, opacity: 0 }, {
-        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
-        scrollTrigger: { trigger: offersRef.current, start: 'top 80%', end: 'top 50%', scrub: true }
-      });
-    }
-    if (feedbackRef.current) {
-      gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
-        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
-        scrollTrigger: { trigger: feedbackRef.current, start: 'top 80%', end: 'top 50%', scrub: true }
-      });
-    }
-  }, []);
-  */
-
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -245,6 +224,7 @@ export default function Home() {
     }
   }, [pax, bags]);
 
+  // Recalculate price when distance or other factors change
   useEffect(() => {
     updatePrice();
   }, [currentDistanceMiles, returnDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet]);
@@ -291,7 +271,7 @@ export default function Home() {
     setStopSuggestions({});
     setReturnPickupSuggestions([]);
     setReturnDropoffSuggestions([]);
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (window.innerWidth < 768) {
       setSheetExpanded(true);
       window.scrollTo(0, 0);
     }
@@ -312,25 +292,27 @@ export default function Home() {
   };
 
   const handleTyping = (type: string, value: string) => {
-    // FIX: Using specific logic for each type instead of variable assignment to avoid TS mismatch
-    let setSuggestions: any;
+    // We are resetting waypoints here. Using local variable logic to satisfy TS if needed, 
+    // but direct assignment works if types match. 
+    // The previous error was due to assigning 'returnRouteWaypoints' (no stops) to a variable typed with stops.
+    // We will access refs directly.
 
     if (type === 'pickup') {
       routeWaypoints.current.pickup = null;
-      setSuggestions = setPickupSuggestions;
+      setPickupSuggestions([]); // Will be populated by fetch or showPresets
     } else if (type === 'dropoff') {
       routeWaypoints.current.dropoff = null;
-      setSuggestions = setDropoffSuggestions;
+      setDropoffSuggestions([]);
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       routeWaypoints.current.stops[idx] = null;
-      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
+      // For stops, we clear via setStopSuggestions later
     } else if (type === 'return-pickup') {
       returnRouteWaypoints.current.pickup = null;
-      setSuggestions = setReturnPickupSuggestions;
+      setReturnPickupSuggestions([]);
     } else if (type === 'return-dropoff') {
       returnRouteWaypoints.current.dropoff = null;
-      setSuggestions = setReturnDropoffSuggestions;
+      setReturnDropoffSuggestions([]);
     } else {
       return;
     }
@@ -343,7 +325,12 @@ export default function Home() {
       return;
     }
     if (value.length < 3) {
-      setSuggestions([]);
+      // Clear specific suggestion list based on type
+      if (type === 'pickup') setPickupSuggestions([]);
+      else if (type === 'dropoff') setDropoffSuggestions([]);
+      else if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: [] }));
+      else if (type === 'return-pickup') setReturnPickupSuggestions([]);
+      else if (type === 'return-dropoff') setReturnDropoffSuggestions([]);
       return;
     }
     
@@ -354,64 +341,69 @@ export default function Home() {
           if (data.features?.length) {
             data.features.forEach((f: any) => list.push({ text: f.place_name, center: f.center as LngLat }));
           }
-          setSuggestions(list);
+          // Set suggestions based on type
+          if (type === 'pickup') setPickupSuggestions(list);
+          else if (type === 'dropoff') setDropoffSuggestions(list);
+          else if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
+          else if (type === 'return-pickup') setReturnPickupSuggestions(list);
+          else if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
         });
     }, 300);
   };
 
   const selectLocation = (type: string, name: string, coords: LngLat) => {
-    let map = mapRef.current;
-    let startM = startMarker;
-    let endM = endMarker;
-    let calculate = calculateRoute;
-    let setSuggestions: any;
+    // To fix TypeScript errors, avoid assigning refs to a variable that changes type.
+    // Handle logic per type directly.
+    
+    if (!mapRef.current) return;
 
     if (type === 'pickup') {
       setPickup(name);
       routeWaypoints.current.pickup = coords;
-      if (startM.current) startM.current.remove();
-      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
-      map.flyTo({ center: coords, zoom: 13 });
-      setSuggestions = setPickupSuggestions;
+      if (startMarker.current) startMarker.current.remove();
+      startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current);
+      mapRef.current.flyTo({ center: coords, zoom: 13 });
+      setPickupSuggestions([]);
+      calculateRoute();
     } else if (type === 'dropoff') {
       setDropoff(name);
       routeWaypoints.current.dropoff = coords;
-      if (endM.current) endM.current.remove();
-      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
-      setSuggestions = setDropoffSuggestions;
+      if (endMarker.current) endMarker.current.remove();
+      endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current);
+      setDropoffSuggestions([]);
+      calculateRoute();
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
       routeWaypoints.current.stops[idx] = coords;
       if (stopMarkers.current[type]) stopMarkers.current[type].remove();
-      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
-      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
+      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current);
+      setStopSuggestions(prev => ({ ...prev, [type]: [] }));
+      calculateRoute();
     } else if (type === 'return-pickup') {
       setReturnPickup(name);
       returnRouteWaypoints.current.pickup = coords;
-      map = returnMapRef.current;
-      startM = returnStartMarker;
-      if (startM.current) startM.current.remove();
-      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
-      map.flyTo({ center: coords, zoom: 13 });
-      setSuggestions = setReturnPickupSuggestions;
-      calculate = calculateReturnRoute;
+      if (returnStartMarker.current) returnStartMarker.current.remove();
+      // Ensure return map exists
+      if (returnMapRef.current) {
+         returnStartMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(returnMapRef.current);
+         returnMapRef.current.flyTo({ center: coords, zoom: 13 });
+      }
+      setReturnPickupSuggestions([]);
+      calculateReturnRoute();
     } else if (type === 'return-dropoff') {
       setReturnDropoff(name);
       returnRouteWaypoints.current.dropoff = coords;
-      map = returnMapRef.current;
-      endM = returnEndMarker;
-      if (endM.current) endM.current.remove();
-      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
-      setSuggestions = setReturnDropoffSuggestions;
-      calculate = calculateReturnRoute;
-    } else {
-      return;
-    }
+      if (returnEndMarker.current) returnEndMarker.current.remove();
+      if (returnMapRef.current) {
+         returnEndMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(returnMapRef.current);
+      }
+      setReturnDropoffSuggestions([]);
+      calculateReturnRoute();
+    } 
 
-    setSuggestions([]);
     collapseSheet();
-    calculate();
+    checkVisibility();
   };
 
   const calculateRoute = () => {
@@ -428,7 +420,7 @@ export default function Home() {
       if (!data.routes?.length) return;
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
-      currentDistanceMiles.current = distMiles;
+      setCurrentDistanceMiles(distMiles);
       setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
       
@@ -507,8 +499,8 @@ export default function Home() {
 
   const updatePrice = () => {
     let outboundPrice = 0;
-    if (currentDistanceMiles.current > 0) {
-      outboundPrice = currentDistanceMiles.current * vehicles[selectedVehicleIndex].perMile;
+    if (currentDistanceMiles > 0) {
+      outboundPrice = currentDistanceMiles * vehicles[selectedVehicleIndex].perMile;
       if (outboundPrice < 5) outboundPrice = 5;
       if (meetGreet) outboundPrice += 5;
     }
