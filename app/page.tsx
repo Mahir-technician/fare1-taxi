@@ -1,9 +1,9 @@
-// page.tsx
 'use client';
 import React, { useEffect, useState, useRef } from 'react';
 import Lenis from '@studio-freight/lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
 interface PresetItem {
@@ -69,6 +69,7 @@ const vehicles = [
 ];
 const MAX_STOPS = 3;
 export default function Home() {
+  gsap.registerPlugin(ScrollTrigger);
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(false);
@@ -76,7 +77,8 @@ export default function Home() {
   const [bottomBarHiddenScroll, setBottomBarHiddenScroll] = useState(false);
   const [sheetOverlayOpen, setSheetOverlayOpen] = useState(true);
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
-  const [currentDistanceMiles, setCurrentDistanceMiles] = useState(0);
+  const [outDistanceMiles, setOutDistanceMiles] = useState(0);
+  const [retDistanceMiles, setRetDistanceMiles] = useState(0);
   const [totalPrice, setTotalPrice] = useState(0);
   const [oldPriceVisible, setOldPriceVisible] = useState(false);
   const [oldPrice, setOldPrice] = useState(0);
@@ -95,12 +97,12 @@ export default function Home() {
   const [bags, setBags] = useState(0);
  
   // Return Trip
-  const [isReturnTrip, setIsReturnTrip] = useState(false);
+  const [hasReturnTrip, setHasReturnTrip] = useState(false);
   const [returnPickup, setReturnPickup] = useState('');
   const [returnDropoff, setReturnDropoff] = useState('');
-  const [returnFlightNumber, setReturnFlightNumber] = useState('');
   const [returnDate, setReturnDate] = useState('');
   const [returnTime, setReturnTime] = useState('');
+  const [returnFlightNumber, setReturnFlightNumber] = useState('');
   const [returnMeetGreet, setReturnMeetGreet] = useState(false);
  
   // Suggestions
@@ -117,30 +119,39 @@ export default function Home() {
   const [totalRatings, setTotalRatings] = useState('Loading...');
   const [distanceDisplay, setDistanceDisplay] = useState('0 mi');
   const [distanceHidden, setDistanceHidden] = useState(true);
-  const [returnDistanceMiles, setReturnDistanceMiles] = useState(0);
-  const [returnDistanceDisplay, setReturnDistanceDisplay] = useState('0 mi');
- 
   // Refs
-  const mapRef = useRef<any>(null);
+  const outboundMapContainerRef = useRef<HTMLDivElement>(null);
+  const returnMapContainerRef = useRef<HTMLDivElement>(null);
+  const outboundMapRef = useRef<any>(null);
   const returnMapRef = useRef<any>(null);
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
-  const offersRef = useRef<HTMLDivElement>(null);
-  const feedbackRef = useRef<HTMLDivElement>(null);
-  const startMarker = useRef<any>(null);
-  const endMarker = useRef<any>(null);
-  const returnStartMarker = useRef<any>(null);
-  const returnEndMarker = useRef<any>(null);
-  const stopMarkers = useRef<{ [key: string]: any }>({});
-  const routeWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
-  const returnRouteWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
+  const bookingFormRef = useRef<HTMLDivElement>(null);
+  const offersSectionRef = useRef<HTMLDivElement>(null);
+  const feedbackSectionRef = useRef<HTMLDivElement>(null);
+  const outStartMarker = useRef<any>(null);
+  const outEndMarker = useRef<any>(null);
+  const outStopMarkers = useRef<{ [key: string]: any }>({});
+  const retStartMarker = useRef<any>(null);
+  const retEndMarker = useRef<any>(null);
+  const routeWaypointsOut = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
+  const routeWaypointsRet = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   // Initialize
   useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-    // Lenis Init for Premium Smooth Scrolling
+    // Set Date/Time on Client
+    const now = new Date();
+    setDate(now.toISOString().split('T')[0]);
+    setTime(now.toTimeString().substring(0, 5));
+    const handleScroll = () => {
+      const currentScroll = window.scrollY;
+      setIsScrolled(currentScroll > 50);
+      if (currentScroll > 50 && menuOpen) setMenuOpen(false);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    // Init Lenis
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -154,33 +165,24 @@ export default function Home() {
     });
     function raf(time: number) {
       lenis.raf(time);
-      ScrollTrigger.update();
       requestAnimationFrame(raf);
     }
     requestAnimationFrame(raf);
-    // Set Date/Time on Client
-    const now = new Date();
-    setDate(now.toISOString().split('T')[0]);
-    setTime(now.toTimeString().substring(0, 5));
-    const handleScroll = () => {
-      const currentScroll = window.scrollY;
-      setIsScrolled(currentScroll > 50);
-      if (currentScroll > 50 && menuOpen) setMenuOpen(false);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    // Init Mapbox Outbound
+    // Init Outbound Map
     if (window.mapboxgl) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
-      mapRef.current = new window.mapboxgl.Map({
-        container: 'map',
-        style: 'mapbox://styles/mapbox/dark-v11',
-        center: [-0.1276, 51.5074],
-        zoom: 11,
-        attributionControl: false,
-        pitchWithRotate: false
-      });
-      mapRef.current.scrollZoom.disable();
-      mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
+      if (outboundMapContainerRef.current) {
+        outboundMapRef.current = new window.mapboxgl.Map({
+          container: outboundMapContainerRef.current,
+          style: 'mapbox://styles/mapbox/dark-v11',
+          center: [-0.1276, 51.5074],
+          zoom: 11,
+          attributionControl: false,
+          pitchWithRotate: false
+        });
+        outboundMapRef.current.scrollZoom.disable();
+        outboundMapRef.current.on('touchstart', () => outboundMapRef.current.dragPan.enable());
+      }
     }
     const sheet = mainSheetRef.current;
     if (sheet) {
@@ -203,12 +205,11 @@ export default function Home() {
       lenis.destroy();
     };
   }, []);
-  // Init Return Map when needed
   useEffect(() => {
-    if (isReturnTrip && window.mapboxgl && !returnMapRef.current) {
+    if (hasReturnTrip && window.mapboxgl && returnMapContainerRef.current && !returnMapRef.current) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
       returnMapRef.current = new window.mapboxgl.Map({
-        container: 'return-map',
+        container: returnMapContainerRef.current,
         style: 'mapbox://styles/mapbox/dark-v11',
         center: [-0.1276, 51.5074],
         zoom: 11,
@@ -218,38 +219,7 @@ export default function Home() {
       returnMapRef.current.scrollZoom.disable();
       returnMapRef.current.on('touchstart', () => returnMapRef.current.dragPan.enable());
     }
-  }, [isReturnTrip]);
-  // GSAP Animations for Sections
-  useEffect(() => {
-    if (offersRef.current) {
-      gsap.fromTo(offersRef.current, { y: 50, opacity: 0 }, {
-        y: 0,
-        opacity: 1,
-        duration: 1.2,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: offersRef.current,
-          start: 'top 80%',
-          end: 'top 50%',
-          scrub: true,
-        }
-      });
-    }
-    if (feedbackRef.current) {
-      gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
-        y: 0,
-        opacity: 1,
-        duration: 1.2,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: feedbackRef.current,
-          start: 'top 80%',
-          end: 'top 50%',
-          scrub: true,
-        }
-      });
-    }
-  }, []);
+  }, [hasReturnTrip]);
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -259,10 +229,52 @@ export default function Home() {
   }, [pax, bags]);
   useEffect(() => {
     updatePrice();
-  }, [currentDistanceMiles, returnDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet]);
+  }, [outDistanceMiles, retDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet, hasReturnTrip]);
   useEffect(() => {
     checkVisibility();
-  }, [routeWaypoints.current.pickup, routeWaypoints.current.dropoff]);
+  }, [routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff, routeWaypointsRet.current.pickup, routeWaypointsRet.current.dropoff]);
+  useEffect(() => {
+    // GSAP Animations
+    if (bookingFormRef.current) {
+      gsap.from(bookingFormRef.current, {
+        opacity: 0,
+        y: 50,
+        duration: 1,
+        scrollTrigger: {
+          trigger: bookingFormRef.current,
+          start: 'top 80%',
+          end: 'bottom 20%',
+          toggleActions: 'play none none reverse',
+        },
+      });
+    }
+    if (offersSectionRef.current) {
+      gsap.from(offersSectionRef.current, {
+        opacity: 0,
+        y: 50,
+        duration: 1,
+        scrollTrigger: {
+          trigger: offersSectionRef.current,
+          start: 'top 80%',
+          end: 'bottom 20%',
+          toggleActions: 'play none none reverse',
+        },
+      });
+    }
+    if (feedbackSectionRef.current) {
+      gsap.from(feedbackSectionRef.current, {
+        opacity: 0,
+        y: 50,
+        duration: 1,
+        scrollTrigger: {
+          trigger: feedbackSectionRef.current,
+          start: 'top 80%',
+          end: 'bottom 20%',
+          toggleActions: 'play none none reverse',
+        },
+      });
+    }
+  }, []);
   const initReviews = () => {
     if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
       const mapDiv = document.createElement('div');
@@ -317,29 +329,14 @@ export default function Home() {
     if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
   };
   const handleTyping = (type: string, value: string) => {
-    let waypointsRef = routeWaypoints;
-    let setSuggestions: any;
-    if (type === 'pickup') {
-      routeWaypoints.current.pickup = null;
-      setSuggestions = setPickupSuggestions;
-    } else if (type === 'dropoff') {
-      routeWaypoints.current.dropoff = null;
-      setSuggestions = setDropoffSuggestions;
-    } else if (type.startsWith('stop-')) {
+    if (type === 'pickup') routeWaypointsOut.current.pickup = null;
+    if (type === 'dropoff') routeWaypointsOut.current.dropoff = null;
+    if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
-      routeWaypoints.current.stops[idx] = null;
-      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
-    } else if (type === 'return-pickup') {
-      returnRouteWaypoints.current.pickup = null;
-      setSuggestions = setReturnPickupSuggestions;
-      waypointsRef = returnRouteWaypoints;
-    } else if (type === 'return-dropoff') {
-      returnRouteWaypoints.current.dropoff = null;
-      setSuggestions = setReturnDropoffSuggestions;
-      waypointsRef = returnRouteWaypoints;
-    } else {
-      return;
+      routeWaypointsOut.current.stops[idx] = null;
     }
+    if (type === 'return-pickup') routeWaypointsRet.current.pickup = null;
+    if (type === 'return-dropoff') routeWaypointsRet.current.dropoff = null;
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
@@ -348,7 +345,11 @@ export default function Home() {
       return;
     }
     if (value.length < 3) {
-      setSuggestions([]);
+      if (type === 'pickup') setPickupSuggestions([]);
+      if (type === 'dropoff') setDropoffSuggestions([]);
+      if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: [] }));
+      if (type === 'return-pickup') setReturnPickupSuggestions([]);
+      if (type === 'return-dropoff') setReturnDropoffSuggestions([]);
       return;
     }
    
@@ -359,71 +360,67 @@ export default function Home() {
           if (data.features?.length) {
             data.features.forEach((f: any) => list.push({ text: f.place_name, center: f.center as LngLat }));
           }
-          setSuggestions(list);
+          if (type === 'pickup') setPickupSuggestions(list);
+          if (type === 'dropoff') setDropoffSuggestions(list);
+          if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
+          if (type === 'return-pickup') setReturnPickupSuggestions(list);
+          if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
         });
     }, 300);
   };
   const selectLocation = (type: string, name: string, coords: LngLat) => {
-    let map = mapRef.current;
-    let waypoints = routeWaypoints.current;
-    let startM = startMarker;
-    let endM = endMarker;
+    let map: any;
+    let startMarker: React.MutableRefObject<any>;
+    let endMarker: React.MutableRefObject<any>;
+    let routeWaypoints: React.MutableRefObject<{ pickup: LngLat | null; dropoff: LngLat | null; stops: (LngLat | null)[]; }>;
     let setSuggestions: any;
-    let calculate = calculateRoute;
-    if (type === 'pickup') {
-      setPickup(name);
-      waypoints.pickup = coords;
-      if (startM.current) startM.current.remove();
-      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
+    if (type.startsWith('return-')) {
+      map = returnMapRef.current;
+      startMarker = retStartMarker;
+      endMarker = retEndMarker;
+      routeWaypoints = routeWaypointsRet;
+      setSuggestions = type === 'return-pickup' ? setReturnPickupSuggestions : setReturnDropoffSuggestions;
+    } else {
+      map = outboundMapRef.current;
+      startMarker = outStartMarker;
+      endMarker = outEndMarker;
+      routeWaypoints = routeWaypointsOut;
+      setSuggestions = type === 'pickup' ? setPickupSuggestions : (type === 'dropoff' ? setDropoffSuggestions : (prev: any) => ({ ...prev, [type]: [] }));
+    }
+    if (!map) return;
+    if (type === 'pickup' || type === 'return-pickup') {
+      if (type === 'pickup') setPickup(name);
+      else setReturnPickup(name);
+      routeWaypoints.current.pickup = coords;
+      if (startMarker.current) startMarker.current.remove();
+      startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
       map.flyTo({ center: coords, zoom: 13 });
-      setSuggestions = setPickupSuggestions;
-    } else if (type === 'dropoff') {
-      setDropoff(name);
-      waypoints.dropoff = coords;
-      if (endM.current) endM.current.remove();
-      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
-      setSuggestions = setDropoffSuggestions;
+      setSuggestions([]);
+    } else if (type === 'dropoff' || type === 'return-dropoff') {
+      if (type === 'dropoff') setDropoff(name);
+      else setReturnDropoff(name);
+      routeWaypoints.current.dropoff = coords;
+      if (endMarker.current) endMarker.current.remove();
+      endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
+      setSuggestions([]);
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
-      waypoints.stops[idx] = coords;
-      if (stopMarkers.current[type]) stopMarkers.current[type].remove();
-      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
-      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
-    } else if (type === 'return-pickup') {
-      setReturnPickup(name);
-      waypoints = returnRouteWaypoints.current;
-      waypoints.pickup = coords;
-      map = returnMapRef.current;
-      startM = returnStartMarker;
-      if (startM.current) startM.current.remove();
-      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
-      map.flyTo({ center: coords, zoom: 13 });
-      setSuggestions = setReturnPickupSuggestions;
-      calculate = calculateReturnRoute;
-    } else if (type === 'return-dropoff') {
-      setReturnDropoff(name);
-      waypoints = returnRouteWaypoints.current;
-      waypoints.dropoff = coords;
-      map = returnMapRef.current;
-      endM = returnEndMarker;
-      if (endM.current) endM.current.remove();
-      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
-      setSuggestions = setReturnDropoffSuggestions;
-      calculate = calculateReturnRoute;
-    } else {
-      return;
+      routeWaypoints.current.stops[idx] = coords;
+      if (outStopMarkers.current[type]) outStopMarkers.current[type].remove();
+      outStopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
+      setStopSuggestions(prev => ({ ...prev, [type]: [] }));
     }
-    setSuggestions([]);
     collapseSheet();
-    calculate();
+    if (type.startsWith('return-')) calculateRouteReturn();
+    else calculateRouteOut();
   };
-  const calculateRoute = () => {
-    if (!routeWaypoints.current.pickup || !routeWaypoints.current.dropoff || !mapRef.current) return;
+  const calculateRouteOut = () => {
+    if (!routeWaypointsOut.current.pickup || !routeWaypointsOut.current.dropoff || !outboundMapRef.current) return;
    
-    let coords: LngLat[] = [routeWaypoints.current.pickup];
-    routeWaypoints.current.stops.forEach(s => { if (s) coords.push(s); });
-    coords.push(routeWaypoints.current.dropoff);
+    let coords: LngLat[] = [routeWaypointsOut.current.pickup];
+    routeWaypointsOut.current.stops.forEach(s => { if (s) coords.push(s); });
+    coords.push(routeWaypointsOut.current.dropoff);
    
     const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
@@ -432,14 +429,14 @@ export default function Home() {
       if (!data.routes?.length) return;
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
-      setCurrentDistanceMiles(distMiles);
-      setDistanceDisplay(distMiles.toFixed(1) + ' mi');
+      setOutDistanceMiles(distMiles);
+      setDistanceDisplay((distMiles + retDistanceMiles).toFixed(1) + ' mi');
       setDistanceHidden(false);
      
-      if (mapRef.current.getSource('route')) {
-        mapRef.current.getSource('route').setData(r.geometry);
+      if (outboundMapRef.current.getSource('route')) {
+        outboundMapRef.current.getSource('route').setData(r.geometry);
       } else {
-        mapRef.current.addLayer({
+        outboundMapRef.current.addLayer({
             id: 'route', type: 'line',
             source: { type: 'geojson', data: r.geometry },
             paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
@@ -448,13 +445,13 @@ export default function Home() {
      
       const bounds = new window.mapboxgl.LngLatBounds();
       coords.forEach(c => bounds.extend(c));
-      mapRef.current.fitBounds(bounds, { padding: 80 });
+      outboundMapRef.current.fitBounds(bounds, { padding: 80 });
     });
   };
-  const calculateReturnRoute = () => {
-    if (!returnRouteWaypoints.current.pickup || !returnRouteWaypoints.current.dropoff || !returnMapRef.current) return;
+  const calculateRouteReturn = () => {
+    if (!routeWaypointsRet.current.pickup || !routeWaypointsRet.current.dropoff || !returnMapRef.current) return;
    
-    const coords: LngLat[] = [returnRouteWaypoints.current.pickup, returnRouteWaypoints.current.dropoff];
+    let coords: LngLat[] = [routeWaypointsRet.current.pickup, routeWaypointsRet.current.dropoff];
    
     const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
@@ -463,14 +460,15 @@ export default function Home() {
       if (!data.routes?.length) return;
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
-      setReturnDistanceMiles(distMiles);
-      setReturnDistanceDisplay(distMiles.toFixed(1) + ' mi');
+      setRetDistanceMiles(distMiles);
+      setDistanceDisplay((outDistanceMiles + distMiles).toFixed(1) + ' mi');
+      setDistanceHidden(false);
      
-      if (returnMapRef.current.getSource('return-route')) {
-        returnMapRef.current.getSource('return-route').setData(r.geometry);
+      if (returnMapRef.current.getSource('route')) {
+        returnMapRef.current.getSource('route').setData(r.geometry);
       } else {
         returnMapRef.current.addLayer({
-            id: 'return-route', type: 'line',
+            id: 'route', type: 'line',
             source: { type: 'geojson', data: r.geometry },
             paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
         });
@@ -484,17 +482,17 @@ export default function Home() {
   const addStop = () => {
     if (stops.length >= MAX_STOPS) return;
     setStops([...stops, '']);
-    routeWaypoints.current.stops.push(null);
+    routeWaypointsOut.current.stops.push(null);
   };
   const removeStop = (index: number) => {
     setStops(prev => prev.filter((_, i) => i !== index));
-    routeWaypoints.current.stops.splice(index, 1);
+    routeWaypointsOut.current.stops.splice(index, 1);
     const type = `stop-${index + 1}`;
-    if (stopMarkers.current[type]) {
-      stopMarkers.current[type].remove();
-      delete stopMarkers.current[type];
+    if (outStopMarkers.current[type]) {
+      outStopMarkers.current[type].remove();
+      delete outStopMarkers.current[type];
     }
-    calculateRoute();
+    calculateRouteOut();
   };
   const handleStopChange = (index: number, value: string) => {
     setStops(prev => prev.map((val, i) => i === index ? value : val));
@@ -504,19 +502,18 @@ export default function Home() {
     setSelectedVehicleIndex(index);
   };
   const updatePrice = () => {
-    let outboundPrice = 0;
-    if (currentDistanceMiles > 0) {
-      outboundPrice = currentDistanceMiles * vehicles[selectedVehicleIndex].perMile;
-      if (outboundPrice < 5) outboundPrice = 5;
-      if (meetGreet) outboundPrice += 5;
+    if (outDistanceMiles <= 0) return;
+    let outP = outDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+    if (outP < 5) outP = 5;
+    if (meetGreet) outP += 5;
+    let retP = 0;
+    if (hasReturnTrip && retDistanceMiles > 0) {
+      retP = retDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+      if (retP < 5) retP = 5;
+      if (returnMeetGreet) retP += 5;
+      retP *= 0.95;
     }
-    let returnPrice = 0;
-    if (isReturnTrip && returnDistanceMiles > 0) {
-      returnPrice = returnDistanceMiles * vehicles[selectedVehicleIndex].perMile;
-      if (returnPrice < 5) returnPrice = 5;
-      if (returnMeetGreet) returnPrice += 5;
-    }
-    let p = outboundPrice + returnPrice;
+    let p = outP + retP;
     if (p >= 130) {
       setOldPriceVisible(true);
       setOldPrice(p);
@@ -531,23 +528,35 @@ export default function Home() {
     setTotalPrice(p);
   };
   const checkVisibility = () => {
-    const p = routeWaypoints.current.pickup;
-    const d = routeWaypoints.current.dropoff;
-    setBottomBarVisible(!!p && !!d);
+    const p = routeWaypointsOut.current.pickup;
+    const d = routeWaypointsOut.current.dropoff;
+    setBottomBarVisible(!!p && !!d && (!hasReturnTrip || (!!routeWaypointsRet.current.pickup && !!routeWaypointsRet.current.dropoff)));
   };
   const swapLocations = () => {
     const tempPickup = pickup;
     setPickup(dropoff);
     setDropoff(tempPickup);
-    const temp = routeWaypoints.current.pickup;
-    routeWaypoints.current.pickup = routeWaypoints.current.dropoff;
-    routeWaypoints.current.dropoff = temp;
-    if (startMarker.current && endMarker.current) {
-      const tLoc = startMarker.current.getLngLat();
-      startMarker.current.setLngLat(endMarker.current.getLngLat());
-      endMarker.current.setLngLat(tLoc);
+    const temp = routeWaypointsOut.current.pickup;
+    routeWaypointsOut.current.pickup = routeWaypointsOut.current.dropoff;
+    routeWaypointsOut.current.dropoff = temp;
+    if (outStartMarker.current && outEndMarker.current) {
+      const tLoc = outStartMarker.current.getLngLat();
+      outStartMarker.current.setLngLat(outEndMarker.current.getLngLat());
+      outEndMarker.current.setLngLat(tLoc);
     }
-    calculateRoute();
+    calculateRouteOut();
+    if (hasReturnTrip) {
+      setReturnPickup(dropoff);
+      setReturnDropoff(tempPickup);
+      routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
+      routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
+      if (retStartMarker.current && retEndMarker.current) {
+        const tLocRet = retStartMarker.current.getLngLat();
+        retStartMarker.current.setLngLat(retEndMarker.current.getLngLat());
+        retEndMarker.current.setLngLat(tLocRet);
+      }
+      calculateRouteReturn();
+    }
   };
   const getUserLocation = () => {
     if (navigator.geolocation) {
@@ -585,17 +594,26 @@ export default function Home() {
   const goToBooking = () => {
     let url = `https://booking.fare1.co.uk?pickup=${encodeURIComponent(pickup)}&dropoff=${encodeURIComponent(dropoff)}&vehicle=${encodeURIComponent(vehicles[selectedVehicleIndex].name)}&price=${totalPrice.toFixed(2)}&date=${date}&time=${time}&flight=${flightNumber}&meet=${meetGreet}&pax=${pax}&bags=${bags}`;
     stops.forEach((stop, i) => {
-      if (routeWaypoints.current.stops[i]) {
+      if (routeWaypointsOut.current.stops[i]) {
         url += `&stop${i + 1}=${encodeURIComponent(stop)}`;
       }
     });
-    if (isReturnTrip) {
+    if (hasReturnTrip) {
       url += `&returnPickup=${encodeURIComponent(returnPickup)}&returnDropoff=${encodeURIComponent(returnDropoff)}&returnDate=${returnDate}&returnTime=${returnTime}&returnFlight=${returnFlightNumber}&returnMeet=${returnMeetGreet}`;
     }
     window.location.href = url;
   };
-  const showReturnAdd = pickup && dropoff && date && time;
-  const showSplitMap = isReturnTrip && returnPickup && returnDropoff;
+  const addReturnTrip = () => {
+    setHasReturnTrip(true);
+    setReturnPickup(dropoff);
+    setReturnDropoff(pickup);
+    routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
+    routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
+    if (routeWaypointsRet.current.pickup && routeWaypointsRet.current.dropoff) {
+      selectLocation('return-pickup', dropoff, routeWaypointsRet.current.pickup);
+      selectLocation('return-dropoff', pickup, routeWaypointsRet.current.dropoff);
+    }
+  };
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden">
      
@@ -644,14 +662,8 @@ export default function Home() {
       </header>
       {/* MAP BACKGROUND */}
       <div className="fixed inset-0 h-[45vh] z-0 flex">
-        {!showSplitMap ? (
-          <div id="map" className="w-full h-full"></div>
-        ) : (
-          <>
-            <div id="map" className="w-1/2 h-full"></div>
-            <div id="return-map" className="w-1/2 h-full"></div>
-          </>
-        )}
+        <div ref={outboundMapContainerRef} className={`${hasReturnTrip ? 'w-1/2' : 'w-full'} h-full`}></div>
+        {hasReturnTrip && <div ref={returnMapContainerRef} className="w-1/2 h-full"></div>}
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-primary-black pointer-events-none"></div>
       </div>
       {/* MAIN APP SHEET */}
@@ -667,7 +679,7 @@ export default function Home() {
           </div>
         </div>
         {/* BOOKING FORM */}
-        <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
+        <div ref={bookingFormRef} className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
           <div className="space-y-3 relative">
            
             {/* PICKUP INPUT */}
@@ -793,127 +805,124 @@ export default function Home() {
                 </label>
               </div>
             </div>
-          </div>
-          {showReturnAdd && !isReturnTrip && (
-            <div className="my-6 flex justify-center">
-              <button onClick={() => { setIsReturnTrip(true); setReturnPickup(dropoff); setReturnDropoff(pickup); }} className="flex items-center gap-2 text-brand-gold font-bold text-sm uppercase tracking-widest hover:text-white transition py-2 px-4 border border-brand-gold/30 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Add Return Trip
-              </button>
-            </div>
-          )}
-          {isReturnTrip && (
-            <div className="space-y-3 relative mt-6 border-t border-white/10 pt-6">
-              <h3 className="text-center text-brand-gold font-bold text-lg">Return Trip</h3>
-              {/* RETURN PICKUP INPUT */}
-              <div className="location-field-wrapper group">
-                <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
-                  <div className="mr-3 flex-shrink-0 text-brand-gold">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                    </svg>
-                  </div>
-                  <input type="text" id="return-pickup" placeholder="Enter return pickup location"
-                         onFocus={() => expandSheetAndCloseOthers('return-pickup')}
-                         onChange={(e) => {
-                           setReturnPickup(e.target.value);
-                           handleTyping('return-pickup', e.target.value);
-                         }}
-                         value={returnPickup}
-                         className="text-[15px] font-medium"/>
-                </div>
-                <ul className="suggestions-list" style={{display: returnPickupSuggestions.length > 0 ? 'block' : 'none'}}>
-                  {returnPickupSuggestions.map((item, i) => (
-                    item.isHeader ?
-                      <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
-                      <li key={i} onClick={() => selectLocation('return-pickup', item.text, item.center)}>{item.text}</li>
-                  ))}
-                </ul>
-                <div className="connector-line"></div>
-              </div>
-              {/* RETURN DROPOFF INPUT */}
-              <div className="location-field-wrapper group">
-                <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
-                  <div className="mr-3 flex-shrink-0 text-brand-gold">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                  <input type="text" id="return-dropoff" placeholder="Enter return destination"
-                         onFocus={() => expandSheetAndCloseOthers('return-dropoff')}
-                         onChange={(e) => {
-                           setReturnDropoff(e.target.value);
-                           handleTyping('return-dropoff', e.target.value);
-                         }}
-                         value={returnDropoff}
-                         className="text-[15px] font-medium"/>
-                </div>
-                <ul className="suggestions-list" style={{display: returnDropoffSuggestions.length > 0 ? 'block' : 'none'}}>
-                  {returnDropoffSuggestions.map((item, i) => (
-                    item.isHeader ?
-                      <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
-                      <li key={i} onClick={() => selectLocation('return-dropoff', item.text, item.center)}>{item.text}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Date</label>
-                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                      <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Time</label>
-                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                      <input type="time" value={returnTime} onChange={e => setReturnTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Return Flight No.</label>
-                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                      <input type="text" placeholder="e.g. EZY410" value={returnFlightNumber} onChange={e => setReturnFlightNumber(e.target.value)} className="uppercase text-sm placeholder-gray-600 bg-transparent border-none outline-none text-white w-full" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Meet & Greet</label>
-                    <label className="checkbox-wrapper unified-input rounded-xl h-[50px] px-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition">
-                      <span className="text-xs font-bold text-brand-gold">£5.00</span>
-                      <input type="checkbox" checked={returnMeetGreet} onChange={() => setReturnMeetGreet(!returnMeetGreet)} className="hidden" />
-                      <div className={`w-4 h-4 border border-gray-600 rounded flex items-center justify-center transition-all ${returnMeetGreet ? 'bg-brand-gold border-brand-gold' : ''}`}>
-                        <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+            {/* RETURN TRIP */}
+            <div className="sm:col-span-2">
+              {!hasReturnTrip ? (
+                <button onClick={addReturnTrip} className="w-full py-3 bg-brand-gold/20 text-brand-gold font-bold rounded-xl hover:bg-brand-gold/30 transition flex items-center justify-center animate-pulse">
+                  Add Return Trip <span className="ml-2 text-lg">+</span>
+                </button>
+              ) : (
+                <div className="space-y-4 border-t border-white/5 pt-4">
+                  <h3 className="text-sm font-bold text-brand-gold">Return Trip Details</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="location-field-wrapper group">
+                      <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
+                        <div className="mr-3 flex-shrink-0 text-brand-gold">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+                          </svg>
+                        </div>
+                        <input type="text" id="return-pickup" placeholder="Enter return pickup location"
+                               onFocus={() => expandSheetAndCloseOthers('return-pickup')}
+                               onChange={(e) => {
+                                 setReturnPickup(e.target.value);
+                                 handleTyping('return-pickup', e.target.value);
+                               }}
+                               value={returnPickup}
+                               className="text-[15px] font-medium"/>
                       </div>
-                    </label>
+                      <ul className="suggestions-list" style={{display: returnPickupSuggestions.length > 0 ? 'block' : 'none'}}>
+                        {returnPickupSuggestions.map((item, i) => (
+                          item.isHeader ?
+                            <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
+                            <li key={i} onClick={() => selectLocation('return-pickup', item.text, item.center)}>{item.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="location-field-wrapper group">
+                      <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
+                        <div className="mr-3 flex-shrink-0 text-brand-gold">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                        <input type="text" id="return-dropoff" placeholder="Enter return destination"
+                               onFocus={() => expandSheetAndCloseOthers('return-dropoff')}
+                               onChange={(e) => {
+                                 setReturnDropoff(e.target.value);
+                                 handleTyping('return-dropoff', e.target.value);
+                               }}
+                               value={returnDropoff}
+                               className="text-[15px] font-medium"/>
+                      </div>
+                      <ul className="suggestions-list" style={{display: returnDropoffSuggestions.length > 0 ? 'block' : 'none'}}>
+                        {returnDropoffSuggestions.map((item, i) => (
+                          item.isHeader ?
+                            <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
+                            <li key={i} onClick={() => selectLocation('return-dropoff', item.text, item.center)}>{item.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Date</label>
+                        <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                          <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Time</label>
+                        <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                          <input type="time" value={returnTime} onChange={e => setReturnTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Return Flight No.</label>
+                        <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                          <input type="text" placeholder="e.g. EZY410" value={returnFlightNumber} onChange={e => setReturnFlightNumber(e.target.value)} className="uppercase text-sm placeholder-gray-600 bg-transparent border-none outline-none text-white w-full" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Meet & Greet</label>
+                        <label className="checkbox-wrapper unified-input rounded-xl h-[50px] px-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition">
+                          <span className="text-xs font-bold text-brand-gold">£5.00</span>
+                          <input type="checkbox" checked={returnMeetGreet} onChange={() => setReturnMeetGreet(!returnMeetGreet)} className="hidden" />
+                          <div className={`w-4 h-4 border border-gray-600 rounded flex items-center justify-center transition-all ${returnMeetGreet ? 'bg-brand-gold border-brand-gold' : ''}`}>
+                            <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
                   </div>
+                  <button onClick={() => setHasReturnTrip(false)} className="w-full py-3 bg-red-500/20 text-red-400 font-bold rounded-xl hover:bg-red-500/30 transition">
+                    Remove Return Trip
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:col-span-2">
+              <div>
+                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
+                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                  <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
+                  </select>
+                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
                 </div>
               </div>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3 sm:col-span-2 mt-4">
-            <div>
-              <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
-              <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                  {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
-                </select>
-                <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
-              </div>
-            </div>
-            <div>
-              <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
-              <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                  <option value="0" className="bg-black">No Luggage</option>
-                  {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
-                  <option value="9" className="bg-black">8+ Bags</option>
-                </select>
-                <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+              <div>
+                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
+                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                  <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                    <option value="0" className="bg-black">No Luggage</option>
+                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
+                    <option value="9" className="bg-black">8+ Bags</option>
+                  </select>
+                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+                </div>
               </div>
             </div>
           </div>
@@ -932,7 +941,7 @@ export default function Home() {
           </div>
         </div>
         {/* OFFERS SECTION */}
-        <div ref={offersRef} className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
+        <div ref={offersSectionRef} className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
           <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
           <div className="absolute inset-0 bg-gradient-to-b from-brand-gold-dark/10 via-transparent to-brand-gold-dark/20 pointer-events-none"></div>
           <div className="w-[90%] mx-auto max-w-7xl relative z-10">
@@ -948,17 +957,17 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Cruise Port & Long-Distance Taxi Service - Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
-                At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
+                At <strong>Fare 1 Taxi</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong>. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
               </p>
             </div>
             <div className="mb-20">
               <div className="flex items-center justify-center gap-4 md:gap-6 mb-12">
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
                 <h3 className="text-xl md:text-3xl font-heading font-black uppercase tracking-wider text-center text-primary-black drop-shadow-sm">
-                  Exclusive Rates for Airport Taxi Transfers UK from Southampton
+                  Exclusive Rates from Southampton
                 </h3>
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
               </div>
@@ -1105,7 +1114,7 @@ export default function Home() {
             </div>
             <div className="border-t border-primary-black/20 pt-16">
               <div className="text-center mb-12">
-                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Cruise Port & Long-Distance Taxi Service, Nationwide Reach</h3>
+                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Service, Nationwide Reach</h3>
                 <p className="text-lg font-medium max-w-3xl mx-auto opacity-80 leading-relaxed text-primary-black">
                   We are local to you. Fare 1 operates a vast network of dedicated <strong>airport taxi transfer</strong> hubs across the UK. Book directly from your local area for the fastest service.
                 </p>
@@ -1152,7 +1161,7 @@ export default function Home() {
           </div>
         </div>
         {/* FEEDBACK SECTION */}
-        <div ref={feedbackRef} className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
+        <div ref={feedbackSectionRef} className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
           <div className="w-[90%] mx-auto max-w-6xl relative z-10">
             <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
@@ -1231,6 +1240,7 @@ export default function Home() {
               <p className="text-3xl font-heading font-black text-white tracking-tight leading-none flex items-baseline gap-2">
                 £<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-[#fff5cc]">{totalPrice.toFixed(2)}</span>
                 <span className={`text-[10px] text-gray-400 font-medium tracking-normal ${distanceHidden ? 'hidden' : ''}`}>{distanceDisplay}</span>
+                {hasReturnTrip && <span className="text-[10px] text-green-500 font-medium">Return Leg -5% Applied</span>}
               </p>
             </div>
           </div>
