@@ -153,16 +153,15 @@ export default function Home() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     // Init Lenis
     const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      direction: 'vertical',
-      gestureDirection: 'vertical',
-      smooth: true,
-      mouseMultiplier: 1,
-      smoothTouch: false,
-      touchMultiplier: 2,
-      infinite: false,
-    });
+    duration: 1.2,
+    easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+    orientation: 'vertical',  // Changed from 'direction'
+    gestureOrientation: 'vertical',  // Changed from 'gestureDirection'
+    wheelMultiplier: 1,  // Changed from 'mouseMultiplier'
+    smoothTouch: false,
+    touchMultiplier: 2,
+    infinite: false,
+  });
     function raf(time: number) {
       lenis.raf(time);
       requestAnimationFrame(raf);
