@@ -1,32 +1,29 @@
+// page.tsx
 'use client';
-
 import React, { useEffect, useState, useRef } from 'react';
-
+import Lenis from '@studio-freight/lenis';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
-
 interface PresetItem {
   name: string;
   center: LngLat;
 }
-
 interface SuggestionItem {
   text: string;
   center: LngLat;
   isHeader?: boolean;
   name?: string;
 }
-
 declare global {
   interface Window {
     mapboxgl: any;
     google: any;
   }
 }
-
 // --- Constants ---
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
-
 const PRESET_DATA: Record<string, PresetItem[]> = {
   'Airports': [
     { name: 'Southampton Airport', center: [-1.3568, 50.9503] },
@@ -59,7 +56,6 @@ const PRESET_DATA: Record<string, PresetItem[]> = {
     { name: 'Southampton Town Quay', center: [-1.4060, 50.8960] }
   ]
 };
-
 const vehicles = [
   { name: "Standard Saloon", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/Saloon-2.png", perMile: 1.67, hourly: 25, passengers: 4, luggage: 2, description: "Economic" },
   { name: "Executive Saloon", image: "https://www.fareone.co.uk/wp-content/uploads/2025/12/executive-saloon.png", perMile: 2.25, hourly: 25, passengers: 3, luggage: 2, description: "Mercedes E-Class" },
@@ -71,9 +67,7 @@ const vehicles = [
   { name: "Executive 8 Seater", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/People-Carrier-2.png", perMile: 3.22, hourly: 25, passengers: 8, luggage: 16, description: "Mini Bus" },
   { name: "Accessible", image: "https://www.fareone.co.uk/wp-content/uploads/2025/11/Accessible-2.png", perMile: 3.57, hourly: 25, passengers: 3, luggage: 2, description: "WAV" }
 ];
-
 const MAX_STOPS = 3;
-
 export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,7 +82,7 @@ export default function Home() {
   const [oldPrice, setOldPrice] = useState(0);
   const [promoText, setPromoText] = useState("REACH £130 & GET 15% OFF");
   const [promoClass, setPromoClass] = useState('text-brand-gold');
-  
+ 
   // Inputs
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
@@ -99,47 +93,82 @@ export default function Home() {
   const [meetGreet, setMeetGreet] = useState(false);
   const [pax, setPax] = useState(1);
   const [bags, setBags] = useState(0);
-  
+ 
+  // Return Trip
+  const [isReturnTrip, setIsReturnTrip] = useState(false);
+  const [returnPickup, setReturnPickup] = useState('');
+  const [returnDropoff, setReturnDropoff] = useState('');
+  const [returnFlightNumber, setReturnFlightNumber] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
+  const [returnMeetGreet, setReturnMeetGreet] = useState(false);
+ 
   // Suggestions
   const [filteredVehicles, setFilteredVehicles] = useState<typeof vehicles>([]);
   const [pickupSuggestions, setPickupSuggestions] = useState<SuggestionItem[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<SuggestionItem[]>([]);
   const [stopSuggestions, setStopSuggestions] = useState<{ [key: string]: SuggestionItem[] }>({});
-  
+  const [returnPickupSuggestions, setReturnPickupSuggestions] = useState<SuggestionItem[]>([]);
+  const [returnDropoffSuggestions, setReturnDropoffSuggestions] = useState<SuggestionItem[]>([]);
+ 
   // Reviews & UI
   const [reviews, setReviews] = useState<any[]>([]);
   const [headerStars, setHeaderStars] = useState('★★★★★');
   const [totalRatings, setTotalRatings] = useState('Loading...');
   const [distanceDisplay, setDistanceDisplay] = useState('0 mi');
   const [distanceHidden, setDistanceHidden] = useState(true);
-
+  const [returnDistanceMiles, setReturnDistanceMiles] = useState(0);
+  const [returnDistanceDisplay, setReturnDistanceDisplay] = useState('0 mi');
+ 
   // Refs
-  const mapRef = useRef<any>(null); // Use any to avoid strict Mapbox type collisions in Next.js
+  const mapRef = useRef<any>(null);
+  const returnMapRef = useRef<any>(null);
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
+  const offersRef = useRef<HTMLDivElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const startMarker = useRef<any>(null);
   const endMarker = useRef<any>(null);
+  const returnStartMarker = useRef<any>(null);
+  const returnEndMarker = useRef<any>(null);
   const stopMarkers = useRef<{ [key: string]: any }>({});
   const routeWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
+  const returnRouteWaypoints = useRef<{ pickup: LngLat | null, dropoff: LngLat | null }>({ pickup: null, dropoff: null });
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-
   // Initialize
   useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+    // Lenis Init for Premium Smooth Scrolling
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      direction: 'vertical',
+      gestureDirection: 'vertical',
+      smooth: true,
+      mouseMultiplier: 1,
+      smoothTouch: false,
+      touchMultiplier: 2,
+      infinite: false,
+    });
+    function raf(time: number) {
+      lenis.raf(time);
+      ScrollTrigger.update();
+      requestAnimationFrame(raf);
+    }
+    requestAnimationFrame(raf);
     // Set Date/Time on Client
     const now = new Date();
     setDate(now.toISOString().split('T')[0]);
     setTime(now.toTimeString().substring(0, 5));
-
     const handleScroll = () => {
       const currentScroll = window.scrollY;
       setIsScrolled(currentScroll > 50);
       if (currentScroll > 50 && menuOpen) setMenuOpen(false);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
-
-    // Init Mapbox
+    // Init Mapbox Outbound
     if (window.mapboxgl) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
       mapRef.current = new window.mapboxgl.Map({
@@ -153,7 +182,6 @@ export default function Home() {
       mapRef.current.scrollZoom.disable();
       mapRef.current.on('touchstart', () => mapRef.current.dragPan.enable());
     }
-
     const sheet = mainSheetRef.current;
     if (sheet) {
       const handleSheetScroll = throttle(() => {
@@ -166,18 +194,62 @@ export default function Home() {
       }, 100);
       sheet.addEventListener('scroll', handleSheetScroll);
     }
-
     enableDragScroll(vehicleContainerRef.current);
     enableDragScroll(googleReviewsContainerRef.current);
-
     initReviews();
-
     return () => {
       window.removeEventListener('scroll', handleScroll);
       if (sheet) sheet.removeEventListener('scroll', () => {});
+      lenis.destroy();
     };
   }, []);
-
+  // Init Return Map when needed
+  useEffect(() => {
+    if (isReturnTrip && window.mapboxgl && !returnMapRef.current) {
+      window.mapboxgl.accessToken = MAPBOX_TOKEN;
+      returnMapRef.current = new window.mapboxgl.Map({
+        container: 'return-map',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [-0.1276, 51.5074],
+        zoom: 11,
+        attributionControl: false,
+        pitchWithRotate: false
+      });
+      returnMapRef.current.scrollZoom.disable();
+      returnMapRef.current.on('touchstart', () => returnMapRef.current.dragPan.enable());
+    }
+  }, [isReturnTrip]);
+  // GSAP Animations for Sections
+  useEffect(() => {
+    if (offersRef.current) {
+      gsap.fromTo(offersRef.current, { y: 50, opacity: 0 }, {
+        y: 0,
+        opacity: 1,
+        duration: 1.2,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: offersRef.current,
+          start: 'top 80%',
+          end: 'top 50%',
+          scrub: true,
+        }
+      });
+    }
+    if (feedbackRef.current) {
+      gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
+        y: 0,
+        opacity: 1,
+        duration: 1.2,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: feedbackRef.current,
+          start: 'top 80%',
+          end: 'top 50%',
+          scrub: true,
+        }
+      });
+    }
+  }, []);
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -185,15 +257,12 @@ export default function Home() {
       setSelectedVehicleIndex(0);
     }
   }, [pax, bags]);
-
   useEffect(() => {
     updatePrice();
-  }, [currentDistanceMiles, selectedVehicleIndex, meetGreet]);
-
+  }, [currentDistanceMiles, returnDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet]);
   useEffect(() => {
     checkVisibility();
   }, [routeWaypoints.current.pickup, routeWaypoints.current.dropoff]);
-
   const initReviews = () => {
     if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
       const mapDiv = document.createElement('div');
@@ -217,26 +286,24 @@ export default function Home() {
       });
     }
   };
-
   const toggleMenu = () => {
     setMenuOpen(!menuOpen);
   };
-
   const collapseSheet = () => {
     setSheetExpanded(false);
   };
-
   const expandSheetAndCloseOthers = (id: string) => {
     setPickupSuggestions([]);
     setDropoffSuggestions([]);
     setStopSuggestions({});
+    setReturnPickupSuggestions([]);
+    setReturnDropoffSuggestions([]);
     if (window.innerWidth < 768) {
       setSheetExpanded(true);
       window.scrollTo(0, 0);
     }
     handleTyping(id, (document.getElementById(id) as HTMLInputElement)?.value || '');
   };
-
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
     Object.keys(PRESET_DATA).forEach(category => {
@@ -246,14 +313,32 @@ export default function Home() {
     if (type === 'pickup') setPickupSuggestions(list);
     if (type === 'dropoff') setDropoffSuggestions(list);
     if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
+    if (type === 'return-pickup') setReturnPickupSuggestions(list);
+    if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
   };
-
   const handleTyping = (type: string, value: string) => {
-    if (type === 'pickup') routeWaypoints.current.pickup = null;
-    if (type === 'dropoff') routeWaypoints.current.dropoff = null;
-    if (type.startsWith('stop-')) {
+    let waypointsRef = routeWaypoints;
+    let setSuggestions;
+    if (type === 'pickup') {
+      waypointsRef.current.pickup = null;
+      setSuggestions = setPickupSuggestions;
+    } else if (type === 'dropoff') {
+      waypointsRef.current.dropoff = null;
+      setSuggestions = setDropoffSuggestions;
+    } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
-      routeWaypoints.current.stops[idx] = null;
+      waypointsRef.current.stops[idx] = null;
+      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
+    } else if (type === 'return-pickup') {
+      returnRouteWaypoints.current.pickup = null;
+      setSuggestions = setReturnPickupSuggestions;
+      waypointsRef = returnRouteWaypoints;
+    } else if (type === 'return-dropoff') {
+      returnRouteWaypoints.current.dropoff = null;
+      setSuggestions = setReturnDropoffSuggestions;
+      waypointsRef = returnRouteWaypoints;
+    } else {
+      return;
     }
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
@@ -263,12 +348,10 @@ export default function Home() {
       return;
     }
     if (value.length < 3) {
-      if (type === 'pickup') setPickupSuggestions([]);
-      if (type === 'dropoff') setDropoffSuggestions([]);
-      if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: [] }));
+      setSuggestions([]);
       return;
     }
-    
+   
     debounceTimer.current = setTimeout(() => {
       fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=poi,address`)
         .then(r => r.json()).then(data => {
@@ -276,51 +359,75 @@ export default function Home() {
           if (data.features?.length) {
             data.features.forEach((f: any) => list.push({ text: f.place_name, center: f.center as LngLat }));
           }
-          if (type === 'pickup') setPickupSuggestions(list);
-          if (type === 'dropoff') setDropoffSuggestions(list);
-          if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
+          setSuggestions(list);
         });
     }, 300);
   };
-
   const selectLocation = (type: string, name: string, coords: LngLat) => {
-    if (!mapRef.current) return;
-
+    let map = mapRef.current;
+    let waypoints = routeWaypoints.current;
+    let startM = startMarker;
+    let endM = endMarker;
+    let setSuggestions;
+    let calculate = calculateRoute;
     if (type === 'pickup') {
       setPickup(name);
-      routeWaypoints.current.pickup = coords;
-      if (startMarker.current) startMarker.current.remove();
-      startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(mapRef.current);
-      mapRef.current.flyTo({ center: coords, zoom: 13 });
-      setPickupSuggestions([]);
+      waypoints.pickup = coords;
+      if (startM.current) startM.current.remove();
+      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
+      map.flyTo({ center: coords, zoom: 13 });
+      setSuggestions = setPickupSuggestions;
     } else if (type === 'dropoff') {
       setDropoff(name);
-      routeWaypoints.current.dropoff = coords;
-      if (endMarker.current) endMarker.current.remove();
-      endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(mapRef.current);
-      setDropoffSuggestions([]);
+      waypoints.dropoff = coords;
+      if (endM.current) endM.current.remove();
+      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
+      setSuggestions = setDropoffSuggestions;
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
-      routeWaypoints.current.stops[idx] = coords;
+      waypoints.stops[idx] = coords;
       if (stopMarkers.current[type]) stopMarkers.current[type].remove();
-      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(mapRef.current);
-      setStopSuggestions(prev => ({ ...prev, [type]: [] }));
+      stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
+      setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
+    } else if (type === 'return-pickup') {
+      setReturnPickup(name);
+      waypoints = returnRouteWaypoints.current;
+      waypoints.pickup = coords;
+      map = returnMapRef.current;
+      startM = returnStartMarker;
+      if (startM.current) startM.current.remove();
+      startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
+      map.flyTo({ center: coords, zoom: 13 });
+      setSuggestions = setReturnPickupSuggestions;
+      calculate = calculateReturnRoute;
+    } else if (type === 'return-dropoff') {
+      setReturnDropoff(name);
+      waypoints = returnRouteWaypoints.current;
+      waypoints.dropoff = coords;
+      map = returnMapRef.current;
+      endM = returnEndMarker;
+      if (endM.current) endM.current.remove();
+      endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
+      setSuggestions = setReturnDropoffSuggestions;
+      calculate = calculateReturnRoute;
+    } else {
+      return;
     }
+    setSuggestions([]);
     collapseSheet();
-    calculateRoute();
+    calculate();
   };
-
   const calculateRoute = () => {
     if (!routeWaypoints.current.pickup || !routeWaypoints.current.dropoff || !mapRef.current) return;
-    
+   
     let coords: LngLat[] = [routeWaypoints.current.pickup];
     routeWaypoints.current.stops.forEach(s => { if (s) coords.push(s); });
     coords.push(routeWaypoints.current.dropoff);
-    
+   
     const coordString = coords.map(c => c.join(',')).join(';');
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-    
+   
     fetch(url).then(r => r.json()).then(data => {
       if (!data.routes?.length) return;
       const r = data.routes[0];
@@ -328,30 +435,57 @@ export default function Home() {
       setCurrentDistanceMiles(distMiles);
       setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
-      
+     
       if (mapRef.current.getSource('route')) {
         mapRef.current.getSource('route').setData(r.geometry);
       } else {
-        mapRef.current.addLayer({ 
-            id: 'route', type: 'line', 
-            source: { type: 'geojson', data: r.geometry }, 
-            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 } 
+        mapRef.current.addLayer({
+            id: 'route', type: 'line',
+            source: { type: 'geojson', data: r.geometry },
+            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
         });
       }
-      
-      // Use mapboxgl from window or import to access LngLatBounds
+     
       const bounds = new window.mapboxgl.LngLatBounds();
       coords.forEach(c => bounds.extend(c));
       mapRef.current.fitBounds(bounds, { padding: 80 });
     });
   };
-
+  const calculateReturnRoute = () => {
+    if (!returnRouteWaypoints.current.pickup || !returnRouteWaypoints.current.dropoff || !returnMapRef.current) return;
+   
+    const coords: LngLat[] = [returnRouteWaypoints.current.pickup, returnRouteWaypoints.current.dropoff];
+   
+    const coordString = coords.map(c => c.join(',')).join(';');
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordString}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+   
+    fetch(url).then(r => r.json()).then(data => {
+      if (!data.routes?.length) return;
+      const r = data.routes[0];
+      const distMiles = r.distance / 1609.34;
+      setReturnDistanceMiles(distMiles);
+      setReturnDistanceDisplay(distMiles.toFixed(1) + ' mi');
+     
+      if (returnMapRef.current.getSource('return-route')) {
+        returnMapRef.current.getSource('return-route').setData(r.geometry);
+      } else {
+        returnMapRef.current.addLayer({
+            id: 'return-route', type: 'line',
+            source: { type: 'geojson', data: r.geometry },
+            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
+        });
+      }
+     
+      const bounds = new window.mapboxgl.LngLatBounds();
+      coords.forEach(c => bounds.extend(c));
+      returnMapRef.current.fitBounds(bounds, { padding: 80 });
+    });
+  };
   const addStop = () => {
     if (stops.length >= MAX_STOPS) return;
     setStops([...stops, '']);
     routeWaypoints.current.stops.push(null);
   };
-
   const removeStop = (index: number) => {
     setStops(prev => prev.filter((_, i) => i !== index));
     routeWaypoints.current.stops.splice(index, 1);
@@ -362,21 +496,27 @@ export default function Home() {
     }
     calculateRoute();
   };
-
   const handleStopChange = (index: number, value: string) => {
     setStops(prev => prev.map((val, i) => i === index ? value : val));
     handleTyping(`stop-${index + 1}`, value);
   };
-
   const selectVehicle = (index: number) => {
     setSelectedVehicleIndex(index);
   };
-
   const updatePrice = () => {
-    if (currentDistanceMiles <= 0) return;
-    let p = currentDistanceMiles * vehicles[selectedVehicleIndex].perMile;
-    if (p < 5) p = 5;
-    if (meetGreet) p += 5;
+    let outboundPrice = 0;
+    if (currentDistanceMiles > 0) {
+      outboundPrice = currentDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+      if (outboundPrice < 5) outboundPrice = 5;
+      if (meetGreet) outboundPrice += 5;
+    }
+    let returnPrice = 0;
+    if (isReturnTrip && returnDistanceMiles > 0) {
+      returnPrice = returnDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+      if (returnPrice < 5) returnPrice = 5;
+      if (returnMeetGreet) returnPrice += 5;
+    }
+    let p = outboundPrice + returnPrice;
     if (p >= 130) {
       setOldPriceVisible(true);
       setOldPrice(p);
@@ -390,13 +530,11 @@ export default function Home() {
     }
     setTotalPrice(p);
   };
-
   const checkVisibility = () => {
     const p = routeWaypoints.current.pickup;
     const d = routeWaypoints.current.dropoff;
     setBottomBarVisible(!!p && !!d);
   };
-
   const swapLocations = () => {
     const tempPickup = pickup;
     setPickup(dropoff);
@@ -411,7 +549,6 @@ export default function Home() {
     }
     calculateRoute();
   };
-
   const getUserLocation = () => {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
@@ -422,11 +559,9 @@ export default function Home() {
         alert('Geolocation is not supported by your browser.');
     }
   };
-
   const closeSheet = () => {
     setSheetOverlayOpen(false);
   };
-
   const enableDragScroll = (s: HTMLElement | null) => {
     if (!s) return;
     let isDown = false, startX = 0, scrollLeft = 0;
@@ -435,7 +570,6 @@ export default function Home() {
     s.addEventListener('mouseleave', () => isDown = false);
     s.addEventListener('mousemove', e => { if (!isDown) return; e.preventDefault(); s.scrollLeft = scrollLeft - (e.pageX - s.offsetLeft - startX) * 2; });
   };
-
   const throttle = (func: Function, limit: number) => {
     let inThrottle = false;
     return function (this: any) {
@@ -448,7 +582,6 @@ export default function Home() {
       }
     }
   };
-
   const goToBooking = () => {
     let url = `https://booking.fare1.co.uk?pickup=${encodeURIComponent(pickup)}&dropoff=${encodeURIComponent(dropoff)}&vehicle=${encodeURIComponent(vehicles[selectedVehicleIndex].name)}&price=${totalPrice.toFixed(2)}&date=${date}&time=${time}&flight=${flightNumber}&meet=${meetGreet}&pax=${pax}&bags=${bags}`;
     stops.forEach((stop, i) => {
@@ -456,12 +589,16 @@ export default function Home() {
         url += `&stop${i + 1}=${encodeURIComponent(stop)}`;
       }
     });
+    if (isReturnTrip) {
+      url += `&returnPickup=${encodeURIComponent(returnPickup)}&returnDropoff=${encodeURIComponent(returnDropoff)}&returnDate=${returnDate}&returnTime=${returnTime}&returnFlight=${returnFlightNumber}&returnMeet=${returnMeetGreet}`;
+    }
     window.location.href = url;
   };
-
+  const showReturnAdd = pickup && dropoff && date && time;
+  const showSplitMap = isReturnTrip && returnPickup && returnDropoff;
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden">
-      
+     
       {/* HEADER */}
       <header id="site-header" className={`fixed z-50 transition-all duration-500 ease-in-out ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="glow-wrapper mx-auto">
@@ -505,18 +642,23 @@ export default function Home() {
           </div>
         </div>
       </header>
-
       {/* MAP BACKGROUND */}
-      <div className="fixed inset-0 h-[45vh] z-0">
-        <div id="map" className="w-full h-full"></div>
+      <div className="fixed inset-0 h-[45vh] z-0 flex">
+        {!showSplitMap ? (
+          <div id="map" className="w-full h-full"></div>
+        ) : (
+          <>
+            <div id="map" className="w-1/2 h-full"></div>
+            <div id="return-map" className="w-1/2 h-full"></div>
+          </>
+        )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-primary-black pointer-events-none"></div>
       </div>
-
       {/* MAIN APP SHEET */}
       <div id="main-sheet" ref={mainSheetRef} className={`relative z-10 mt-[38vh] floating-sheet rounded-t-[2rem] border-t border-brand-gold/20 shadow-2xl flex-1 overflow-y-auto pb-40 ${sheetExpanded ? 'sheet-expanded' : ''}`}>
-        
+       
         <div className="drag-handle w-12 h-1 bg-white/10 rounded-full mx-auto mt-3 mb-5"></div>
-        
+       
         <div className={`close-sheet-btn absolute top-4 right-4 z-50 cursor-pointer p-2 ${sheetExpanded ? 'block' : 'hidden'}`} onClick={collapseSheet}>
           <div className="bg-black/50 rounded-full p-2 border border-brand-gold/30">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -524,11 +666,10 @@ export default function Home() {
             </svg>
           </div>
         </div>
-
         {/* BOOKING FORM */}
         <div className="w-[90%] mx-auto max-w-5xl space-y-5 pt-1 px-1 mb-20">
           <div className="space-y-3 relative">
-            
+           
             {/* PICKUP INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
@@ -558,7 +699,6 @@ export default function Home() {
               </ul>
               <div className="connector-line"></div>
             </div>
-
             {/* STOPS */}
             <div id="stops-container" className="space-y-3 pl-2">
               {stops.map((stop, index) => {
@@ -587,7 +727,6 @@ export default function Home() {
                 );
               })}
             </div>
-
             {/* DROPOFF INPUT */}
             <div className="location-field-wrapper group">
               <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
@@ -614,16 +753,13 @@ export default function Home() {
                 ))}
               </ul>
             </div>
-
             <div id="add-stop-area" className="flex justify-end" style={{display: stops.length >= MAX_STOPS ? 'none' : 'flex'}}>
               <button onClick={addStop} className="text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:text-white transition py-1 px-2 border border-brand-gold/30 rounded">
                 + Add Stop
               </button>
             </div>
           </div>
-
           <div className="h-[1px] w-full bg-white/5"></div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -639,7 +775,6 @@ export default function Home() {
                 </div>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Flight No.</label>
@@ -658,31 +793,130 @@ export default function Home() {
                 </label>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:col-span-2">
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                  <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
-                  </select>
-                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+          </div>
+          {showReturnAdd && !isReturnTrip && (
+            <div className="my-6 flex justify-center">
+              <button onClick={() => { setIsReturnTrip(true); setReturnPickup(dropoff); setReturnDropoff(pickup); }} className="flex items-center gap-2 text-brand-gold font-bold text-sm uppercase tracking-widest hover:text-white transition py-2 px-4 border border-brand-gold/30 rounded-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Return Trip
+              </button>
+            </div>
+          )}
+          {isReturnTrip && (
+            <div className="space-y-3 relative mt-6 border-t border-white/10 pt-6">
+              <h3 className="text-center text-brand-gold font-bold text-lg">Return Trip</h3>
+              {/* RETURN PICKUP INPUT */}
+              <div className="location-field-wrapper group">
+                <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
+                  <div className="mr-3 flex-shrink-0 text-brand-gold">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+                    </svg>
+                  </div>
+                  <input type="text" id="return-pickup" placeholder="Enter return pickup location"
+                         onFocus={() => expandSheetAndCloseOthers('return-pickup')}
+                         onChange={(e) => {
+                           setReturnPickup(e.target.value);
+                           handleTyping('return-pickup', e.target.value);
+                         }}
+                         value={returnPickup}
+                         className="text-[15px] font-medium"/>
                 </div>
+                <ul className="suggestions-list" style={{display: returnPickupSuggestions.length > 0 ? 'block' : 'none'}}>
+                  {returnPickupSuggestions.map((item, i) => (
+                    item.isHeader ?
+                      <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
+                      <li key={i} onClick={() => selectLocation('return-pickup', item.text, item.center)}>{item.text}</li>
+                  ))}
+                </ul>
+                <div className="connector-line"></div>
               </div>
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                  <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                    <option value="0" className="bg-black">No Luggage</option>
-                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
-                    <option value="9" className="bg-black">8+ Bags</option>
-                  </select>
-                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+              {/* RETURN DROPOFF INPUT */}
+              <div className="location-field-wrapper group">
+                <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
+                  <div className="mr-3 flex-shrink-0 text-brand-gold">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <input type="text" id="return-dropoff" placeholder="Enter return destination"
+                         onFocus={() => expandSheetAndCloseOthers('return-dropoff')}
+                         onChange={(e) => {
+                           setReturnDropoff(e.target.value);
+                           handleTyping('return-dropoff', e.target.value);
+                         }}
+                         value={returnDropoff}
+                         className="text-[15px] font-medium"/>
+                </div>
+                <ul className="suggestions-list" style={{display: returnDropoffSuggestions.length > 0 ? 'block' : 'none'}}>
+                  {returnDropoffSuggestions.map((item, i) => (
+                    item.isHeader ?
+                      <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
+                      <li key={i} onClick={() => selectLocation('return-dropoff', item.text, item.center)}>{item.text}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Date</label>
+                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                      <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Time</label>
+                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                      <input type="time" value={returnTime} onChange={e => setReturnTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Return Flight No.</label>
+                    <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                      <input type="text" placeholder="e.g. EZY410" value={returnFlightNumber} onChange={e => setReturnFlightNumber(e.target.value)} className="uppercase text-sm placeholder-gray-600 bg-transparent border-none outline-none text-white w-full" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Meet & Greet</label>
+                    <label className="checkbox-wrapper unified-input rounded-xl h-[50px] px-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition">
+                      <span className="text-xs font-bold text-brand-gold">£5.00</span>
+                      <input type="checkbox" checked={returnMeetGreet} onChange={() => setReturnMeetGreet(!returnMeetGreet)} className="hidden" />
+                      <div className={`w-4 h-4 border border-gray-600 rounded flex items-center justify-center transition-all ${returnMeetGreet ? 'bg-brand-gold border-brand-gold' : ''}`}>
+                        <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 sm:col-span-2 mt-4">
+            <div>
+              <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
+              <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                  {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
+                </select>
+                <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+              </div>
+            </div>
+            <div>
+              <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
+              <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                  <option value="0" className="bg-black">No Luggage</option>
+                  {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
+                  <option value="9" className="bg-black">8+ Bags</option>
+                </select>
+                <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+              </div>
+            </div>
           </div>
-
           <div>
             <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
             <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
@@ -697,9 +931,8 @@ export default function Home() {
             </div>
           </div>
         </div>
-
         {/* OFFERS SECTION */}
-        <div className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
+        <div ref={offersRef} className="bg-brand-gold py-20 md:py-28 relative font-sans text-primary-black overflow-hidden z-0 rounded-t-3xl">
           <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
           <div className="absolute inset-0 bg-gradient-to-b from-brand-gold-dark/10 via-transparent to-brand-gold-dark/20 pointer-events-none"></div>
           <div className="w-[90%] mx-auto max-w-7xl relative z-10">
@@ -715,17 +948,17 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Cruise Port & Long-Distance Taxi Service - Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
-                At <strong>Fare 1 Taxi</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong>. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
+                At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
               </p>
             </div>
             <div className="mb-20">
               <div className="flex items-center justify-center gap-4 md:gap-6 mb-12">
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
                 <h3 className="text-xl md:text-3xl font-heading font-black uppercase tracking-wider text-center text-primary-black drop-shadow-sm">
-                  Exclusive Rates from Southampton
+                  Exclusive Rates for Airport Taxi Transfers UK from Southampton
                 </h3>
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
               </div>
@@ -872,7 +1105,7 @@ export default function Home() {
             </div>
             <div className="border-t border-primary-black/20 pt-16">
               <div className="text-center mb-12">
-                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Service, Nationwide Reach</h3>
+                <h3 className="text-2xl md:text-3xl font-heading font-black uppercase mb-4 text-primary-black drop-shadow-sm">Local Cruise Port & Long-Distance Taxi Service, Nationwide Reach</h3>
                 <p className="text-lg font-medium max-w-3xl mx-auto opacity-80 leading-relaxed text-primary-black">
                   We are local to you. Fare 1 operates a vast network of dedicated <strong>airport taxi transfer</strong> hubs across the UK. Book directly from your local area for the fastest service.
                 </p>
@@ -918,9 +1151,8 @@ export default function Home() {
             </div>
           </div>
         </div>
-
         {/* FEEDBACK SECTION */}
-        <div className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
+        <div ref={feedbackRef} className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
           <div className="w-[90%] mx-auto max-w-6xl relative z-10">
             <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
@@ -989,7 +1221,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
       <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-2 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''} ${bottomBarHiddenScroll ? 'hidden-scroll' : ''}`}>
         <div className="flex justify-between items-center max-w-5xl mx-auto gap-4">
           <div className="flex flex-col justify-center min-w-0">
@@ -1008,7 +1239,6 @@ export default function Home() {
           </button>
         </div>
       </div>
-
       <div id="sheet-overlay" className={`fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center transition-opacity duration-300 backdrop-blur-sm ${sheetOverlayOpen ? '' : 'hidden'}`}>
         <div id="location-sheet" className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 shadow-2xl pb-10">
           <div className="w-12 h-12 bg-brand-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-gold border border-brand-gold/20">
