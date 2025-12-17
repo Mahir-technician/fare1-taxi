@@ -218,6 +218,8 @@ export default function Home() {
     }
   }, [isReturnTrip]);
 
+  // GSAP Animations removed for preview
+
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -283,7 +285,7 @@ export default function Home() {
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
     Object.keys(PRESET_DATA).forEach(category => {
-      list.push({ isHeader: true, text: category, center: [0,0] });
+      list.push({ isHeader: true, text: category, center: [0,0] }); // Dummy center for header
       PRESET_DATA[category].forEach((p) => list.push({ text: p.name, center: p.center }));
     });
     if (type === 'pickup') setPickupSuggestions(list);
@@ -972,7 +974,7 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Why pay more? We guarantee the <span class="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
                 At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
