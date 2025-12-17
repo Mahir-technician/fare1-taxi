@@ -274,9 +274,9 @@ export default function Home() {
     setStopSuggestions({});
     setReturnPickupSuggestions([]);
     setReturnDropoffSuggestions([]);
-    if (window.innerWidth < 768) {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setSheetExpanded(true);
-      window.scrollTo(0, 0);
+      if (mainSheetRef.current) mainSheetRef.current.scrollTo(0, 0);
     }
     handleTyping(id, (document.getElementById(id) as HTMLInputElement)?.value || '');
   };
@@ -416,7 +416,7 @@ export default function Home() {
       if (!data.routes?.length) return;
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
-      setCurrentDistanceMiles(distMiles);
+      currentDistanceMiles.current = distMiles;
       setDistanceDisplay(distMiles.toFixed(1) + ' mi');
       setDistanceHidden(false);
       
@@ -1169,7 +1169,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-
         {/* FEEDBACK SECTION */}
         <div ref={feedbackRef} className="bg-primary-black py-20 border-t border-brand-gold/10 relative overflow-hidden font-sans">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-to-b from-brand-gold/5 to-transparent pointer-events-none"></div>
