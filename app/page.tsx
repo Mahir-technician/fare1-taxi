@@ -133,6 +133,7 @@ export default function Home() {
   const returnMapRef = useRef<any>(null);
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
   const offersRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
