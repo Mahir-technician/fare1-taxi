@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 // import Lenis from '@studio-freight/lenis'; // Removed for preview compatibility
 // import gsap from 'gsap'; // Removed for preview compatibility
 // import { ScrollTrigger } from 'gsap/ScrollTrigger'; // Removed for preview compatibility
@@ -148,7 +148,8 @@ export default function Home() {
 
   // Initialize
   useEffect(() => {
-    // GSAP and Lenis initialization removed for preview compatibility
+    // GSAP and Lenis initialization removed for preview compatibility to avoid missing dependency errors.
+    // If you need them in production, ensure they are installed via npm.
 
     // Set Date/Time on Client
     const now = new Date();
@@ -218,7 +219,23 @@ export default function Home() {
     }
   }, [isReturnTrip]);
 
-  // GSAP Animations removed for preview
+  // GSAP Animations (Stubbed out for preview compatibility, uncomment in production if GSAP is installed)
+  /*
+  useEffect(() => {
+    if (offersRef.current) {
+      gsap.fromTo(offersRef.current, { y: 50, opacity: 0 }, {
+        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
+        scrollTrigger: { trigger: offersRef.current, start: 'top 80%', end: 'top 50%', scrub: true }
+      });
+    }
+    if (feedbackRef.current) {
+      gsap.fromTo(feedbackRef.current, { y: 50, opacity: 0 }, {
+        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
+        scrollTrigger: { trigger: feedbackRef.current, start: 'top 80%', end: 'top 50%', scrub: true }
+      });
+    }
+  }, []);
+  */
 
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
@@ -276,7 +293,7 @@ export default function Home() {
     setReturnDropoffSuggestions([]);
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setSheetExpanded(true);
-      if (mainSheetRef.current) mainSheetRef.current.scrollTo(0, 0);
+      window.scrollTo(0, 0);
     }
     handleTyping(id, (document.getElementById(id) as HTMLInputElement)?.value || '');
   };
@@ -284,7 +301,7 @@ export default function Home() {
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
     Object.keys(PRESET_DATA).forEach(category => {
-      list.push({ isHeader: true, text: category, center: [0,0] }); // Dummy center for header
+      list.push({ isHeader: true, text: category, center: [0,0] });
       PRESET_DATA[category].forEach((p) => list.push({ text: p.name, center: p.center }));
     });
     if (type === 'pickup') setPickupSuggestions(list);
@@ -295,27 +312,25 @@ export default function Home() {
   };
 
   const handleTyping = (type: string, value: string) => {
-    let waypointsRef = routeWaypoints;
+    // FIX: Using specific logic for each type instead of variable assignment to avoid TS mismatch
     let setSuggestions: any;
 
     if (type === 'pickup') {
-      waypointsRef.current.pickup = null;
+      routeWaypoints.current.pickup = null;
       setSuggestions = setPickupSuggestions;
     } else if (type === 'dropoff') {
-      waypointsRef.current.dropoff = null;
+      routeWaypoints.current.dropoff = null;
       setSuggestions = setDropoffSuggestions;
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
-      waypointsRef.current.stops[idx] = null;
+      routeWaypoints.current.stops[idx] = null;
       setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
     } else if (type === 'return-pickup') {
       returnRouteWaypoints.current.pickup = null;
       setSuggestions = setReturnPickupSuggestions;
-      waypointsRef = returnRouteWaypoints;
     } else if (type === 'return-dropoff') {
       returnRouteWaypoints.current.dropoff = null;
       setSuggestions = setReturnDropoffSuggestions;
-      waypointsRef = returnRouteWaypoints;
     } else {
       return;
     }
@@ -346,36 +361,34 @@ export default function Home() {
 
   const selectLocation = (type: string, name: string, coords: LngLat) => {
     let map = mapRef.current;
-    let waypoints = routeWaypoints.current;
     let startM = startMarker;
     let endM = endMarker;
-    let setSuggestions: any;
     let calculate = calculateRoute;
+    let setSuggestions: any;
 
     if (type === 'pickup') {
       setPickup(name);
-      waypoints.pickup = coords;
+      routeWaypoints.current.pickup = coords;
       if (startM.current) startM.current.remove();
       startM.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
       map.flyTo({ center: coords, zoom: 13 });
       setSuggestions = setPickupSuggestions;
     } else if (type === 'dropoff') {
       setDropoff(name);
-      waypoints.dropoff = coords;
+      routeWaypoints.current.dropoff = coords;
       if (endM.current) endM.current.remove();
       endM.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
       setSuggestions = setDropoffSuggestions;
     } else if (type.startsWith('stop-')) {
       const idx = parseInt(type.split('-')[1]) - 1;
       setStops(prev => prev.map((val, i) => i === idx ? name : val));
-      waypoints.stops[idx] = coords;
+      routeWaypoints.current.stops[idx] = coords;
       if (stopMarkers.current[type]) stopMarkers.current[type].remove();
       stopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
       setSuggestions = (list: SuggestionItem[]) => setStopSuggestions(prev => ({ ...prev, [type]: list }));
     } else if (type === 'return-pickup') {
       setReturnPickup(name);
-      waypoints = returnRouteWaypoints.current;
-      waypoints.pickup = coords;
+      returnRouteWaypoints.current.pickup = coords;
       map = returnMapRef.current;
       startM = returnStartMarker;
       if (startM.current) startM.current.remove();
@@ -385,8 +398,7 @@ export default function Home() {
       calculate = calculateReturnRoute;
     } else if (type === 'return-dropoff') {
       setReturnDropoff(name);
-      waypoints = returnRouteWaypoints.current;
-      waypoints.dropoff = coords;
+      returnRouteWaypoints.current.dropoff = coords;
       map = returnMapRef.current;
       endM = returnEndMarker;
       if (endM.current) endM.current.remove();
@@ -495,8 +507,8 @@ export default function Home() {
 
   const updatePrice = () => {
     let outboundPrice = 0;
-    if (currentDistanceMiles > 0) {
-      outboundPrice = currentDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+    if (currentDistanceMiles.current > 0) {
+      outboundPrice = currentDistanceMiles.current * vehicles[selectedVehicleIndex].perMile;
       if (outboundPrice < 5) outboundPrice = 5;
       if (meetGreet) outboundPrice += 5;
     }
@@ -966,7 +978,7 @@ export default function Home() {
                 </span>
               </h2>
               <p className="text-lg md:text-2xl font-bold mb-6 text-primary-black">
-                Why pay more? We guarantee the <span className="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
+                Why pay more? We guarantee the <span class="bg-primary-black text-brand-gold px-3 py-1 shadow-lg transform -skew-x-6 inline-block">lowest fixed fares</span> in the market.
               </p>
               <p className="text-base md:text-lg font-medium leading-relaxed max-w-3xl mx-auto opacity-90 text-primary-black">
                 At <strong>FARE 1 TAXI</strong>, we’ve optimized our fleet to provide the most competitive <strong>Airport Taxi Transfers in the UK</strong> and Cruise Port & Long-Distance Taxi Service. Premium Mercedes-Benz comfort shouldn't break the bank. We monitor competitor pricing daily to ensure you secure a deal that simply cannot be matched.
