@@ -165,7 +165,7 @@ export default function Home() {
   const routeWaypointsRet = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   
   const lastScrollTop = useRef(0);
-  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Initialization & Effects ---
 
@@ -341,6 +341,18 @@ export default function Home() {
         }
       });
     }
+  };
+
+  const collapseSheet = () => {
+    setSheetExpanded(false);
+  };
+
+  const closeSheet = () => {
+    setSheetOverlayOpen(false);
+  };
+
+  const selectVehicle = (index: number) => {
+    setSelectedVehicleIndex(index);
   };
 
   const expandSheetAndCloseOthers = (id: string) => {
@@ -1493,4 +1505,4 @@ export default function Home() {
       </div>
     </div>
   );
-} 
+}
