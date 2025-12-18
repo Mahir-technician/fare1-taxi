@@ -13,6 +13,12 @@ html, body {
     color: #e5e7eb;
 }
 
+/* Optimize scrolling elements for mobile */
+.floating-sheet, .bottom-bar, .vehicle-scroll, .review-scroll {
+    will-change: transform;
+    transform: translateZ(0);
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -25,7 +31,7 @@ html, body {
     -webkit-text-fill-color: transparent;
 }
 
-/* Keyframes for border-spin */
+/* Animations */
 @keyframes border-spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -51,7 +57,7 @@ html, body {
     overflow: hidden;
     background: #2a2a2a;
     padding: 1.5px;
-    transition: border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1), width 0.5s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.5s ease;
+    transition: border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.5s ease;
 }
 
 .glow-wrapper::before {
@@ -82,16 +88,16 @@ html, body {
     top: 0;
     left: 0;
     transform: translateX(0);
+    will-change: transform;
 }
 
 #site-header .glow-wrapper {
     border-radius: 0px;
 }
 
-/* Scrolled State */
 #site-header.is-scrolled {
     width: auto;
-    top: 1.5rem;
+    top: 1rem;
     left: 50%;
     transform: translateX(-50%);
 }
@@ -125,6 +131,16 @@ html, body {
 .hamburger.active span:nth-child(1) { top: 8px; transform: rotate(135deg); }
 .hamburger.active span:nth-child(2) { opacity: 0; left: -60px; }
 .hamburger.active span:nth-child(3) { top: 8px; transform: rotate(-135deg); }
+
+/* Social Icons */
+.social-icon {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    color: white; transition: all 0.3s ease;
+}
+.social-icon:hover { background: #D4AF37; color: black; }
 
 /* Mapbox specific */
 .mapboxgl-canvas { filter: grayscale(100%) invert(10%) contrast(110%); }
@@ -226,3 +242,9 @@ html, body {
 
 .review-card { background: #121212; border: 1px solid rgba(212, 175, 55, 0.15); transition: all 0.3s ease; }
 .review-card:hover { border-color: rgba(212, 175, 55, 0.5); transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+
+/* Glass Cards */
+.glass-card {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}

@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Lenis from '@studio-freight/lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -79,6 +79,17 @@ const DISCOUNT_MESSAGES = [
   "Special Offer: Southampton to Airport Transfers"
 ];
 
+// Inline SVG Components for Performance
+const Icons = {
+  Plane: () => <svg className="w-12 h-12 text-brand-gold mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>,
+  Ship: () => <svg className="w-12 h-12 text-brand-gold mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V8.25A2.25 2.25 0 0015.75 6H10" /></svg>,
+  Taxi: () => <svg className="w-12 h-12 text-brand-gold mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>,
+  Facebook: () => <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg>,
+  Instagram: () => <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>,
+  TikTok: () => <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5v4a9 9 0 0 1-9-9v12z"></path></svg>,
+  Google: () => <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
+};
+
 export default function Home() {
   gsap.registerPlugin(ScrollTrigger);
   
@@ -141,10 +152,9 @@ export default function Home() {
   const [distanceHidden, setDistanceHidden] = useState(true);
 
   // Refs
-  const outboundMapContainerRef = useRef<HTMLDivElement>(null);
-  const returnMapContainerRef = useRef<HTMLDivElement>(null);
-  const outboundMapRef = useRef<any>(null);
-  const returnMapRef = useRef<any>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null); // Single Map Instance
+  
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
   const googleReviewsContainerRef = useRef<HTMLDivElement>(null);
@@ -154,12 +164,7 @@ export default function Home() {
   const chooseJourneyRef = useRef<HTMLDivElement>(null);
   
   // Markers & Waypoints
-  const outStartMarker = useRef<any>(null);
-  const outEndMarker = useRef<any>(null);
-  const outStopMarkers = useRef<{ [key: string]: any }>({});
-  const retStartMarker = useRef<any>(null);
-  const retEndMarker = useRef<any>(null);
-  const retStopMarkers = useRef<{ [key: string]: any }>({});
+  const markersRef = useRef<any[]>([]);
   
   const routeWaypointsOut = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
   const routeWaypointsRet = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
@@ -169,13 +174,30 @@ export default function Home() {
 
   // --- Initialization & Effects ---
 
+  // Global Click Listener for suggestions
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.location-field-wrapper')) {
+        setPickupSuggestions([]);
+        setDropoffSuggestions([]);
+        setStopSuggestions({});
+        setReturnPickupSuggestions([]);
+        setReturnDropoffSuggestions([]);
+        setReturnStopSuggestions({});
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     // Client-side date init
     const now = new Date();
     setDate(now.toISOString().split('T')[0]);
     setTime(now.toTimeString().substring(0, 5));
 
-    // Scroll Listener
+    // Scroll Listener for Menu & Header
     const handleScroll = () => {
       const currentScroll = window.scrollY;
       setIsScrolled(currentScroll > 20);
@@ -183,36 +205,45 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    // Lenis Smooth Scroll
+    // Lenis Smooth Scroll - Optimized for Mobile
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       orientation: 'vertical',
       gestureOrientation: 'vertical',
       wheelMultiplier: 1,
-      touchMultiplier: 2,
+      touchMultiplier: 1.5, // Lightweight touch
       infinite: false,
     });
+    
     function raf(time: number) {
       lenis.raf(time);
       requestAnimationFrame(raf);
     }
     requestAnimationFrame(raf);
 
-    // Initialize Outbound Map
-    if (window.mapboxgl) {
+    // Initialize SINGLE Map
+    if (window.mapboxgl && !mapRef.current) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
-      if (outboundMapContainerRef.current) {
-        outboundMapRef.current = new window.mapboxgl.Map({
-          container: outboundMapContainerRef.current,
+      if (mapContainerRef.current) {
+        mapRef.current = new window.mapboxgl.Map({
+          container: mapContainerRef.current,
           style: 'mapbox://styles/mapbox/dark-v11',
-          center: [-0.1276, 51.5074],
-          zoom: 11,
+          center: [-1.3568, 50.9503], // Default center near Southampton
+          zoom: 9,
           attributionControl: false,
           pitchWithRotate: false
         });
-        outboundMapRef.current.scrollZoom.disable();
-        outboundMapRef.current.on('touchstart', () => outboundMapRef.current?.dragPan.enable());
+        
+        mapRef.current.scrollZoom.disable();
+        mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
+        
+        mapRef.current.on('load', () => {
+            // Re-calc routes if data exists (e.g. fast refresh)
+            if (routeWaypointsOut.current.pickup && routeWaypointsOut.current.dropoff) {
+                calculateRouteOut();
+            }
+        });
       }
     }
 
@@ -247,39 +278,18 @@ export default function Home() {
     };
   }, []);
 
-  // Return Map Initialization & Resizing
+  // Return Trip Map Updates
   useEffect(() => {
-    if (hasReturnTrip && window.mapboxgl) {
-      // Small delay to ensure container is rendered
-      setTimeout(() => {
-        if (returnMapContainerRef.current && !returnMapRef.current) {
-          window.mapboxgl.accessToken = MAPBOX_TOKEN;
-          returnMapRef.current = new window.mapboxgl.Map({
-            container: returnMapContainerRef.current,
-            style: 'mapbox://styles/mapbox/dark-v11',
-            center: [-0.1276, 51.5074],
-            zoom: 11,
-            attributionControl: false,
-            pitchWithRotate: false
-          });
-          returnMapRef.current.scrollZoom.disable();
-          returnMapRef.current.on('touchstart', () => returnMapRef.current.dragPan.enable());
-        }
-        
-        // Resize both maps to fit new layout (50/50 split)
-        outboundMapRef.current?.resize();
-        returnMapRef.current?.resize();
-        
-        // Re-center/fit bounds after resize
-        calculateRouteOut();
+    if (hasReturnTrip) {
         calculateRouteReturn();
-      }, 100);
     } else {
-        // If return trip removed, resize outbound map back to full
-        setTimeout(() => {
-            outboundMapRef.current?.resize();
-            calculateRouteOut();
-        }, 100);
+        // Clear return route if present
+        if (mapRef.current && mapRef.current.getSource('route-return')) {
+            mapRef.current.removeLayer('route-return');
+            mapRef.current.removeSource('route-return');
+            setRetDistanceMiles(0);
+            updateMapBounds();
+        }
     }
   }, [hasReturnTrip]);
 
@@ -302,22 +312,28 @@ export default function Home() {
     checkVisibility();
   }, [routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff, routeWaypointsRet.current.pickup, routeWaypointsRet.current.dropoff, hasReturnTrip, date, time, flightNumber]);
 
-  // GSAP Animations
+  // GSAP Animations - DESKTOP ONLY
   useEffect(() => {
-    const fadeElements = [bookingFormRef.current, offersSectionRef.current, feedbackSectionRef.current, chooseJourneyRef.current];
-    fadeElements.forEach(el => {
-      if (el) {
-        gsap.fromTo(el, 
-          { opacity: 0, y: 50 },
-          {
-            opacity: 1, y: 0, duration: 0.8, ease: "power2.out",
-            scrollTrigger: {
-              trigger: el, start: 'top 85%', end: 'bottom 20%', toggleActions: 'play none none reverse'
-            }
+    const mm = gsap.matchMedia();
+    
+    mm.add("(min-width: 768px)", () => {
+        const fadeElements = [bookingFormRef.current, offersSectionRef.current, feedbackSectionRef.current, chooseJourneyRef.current];
+        fadeElements.forEach(el => {
+          if (el) {
+            gsap.fromTo(el, 
+              { opacity: 0, y: 50 },
+              {
+                opacity: 1, y: 0, duration: 0.8, ease: "power2.out",
+                scrollTrigger: {
+                  trigger: el, start: 'top 85%', end: 'bottom 20%', toggleActions: 'play none none reverse'
+                }
+              }
+            );
           }
-        );
-      }
+        });
     });
+
+    return () => mm.revert();
   }, []);
 
   // --- Logic Functions ---
@@ -374,7 +390,7 @@ export default function Home() {
     
     if (type === 'pickup') setPickupSuggestions(list);
     else if (type === 'dropoff') setDropoffSuggestions(list);
-    else if (type.startsWith('stop-')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
+    else if (type.startsWith('stop-') && !type.includes('return')) setStopSuggestions(prev => ({ ...prev, [type]: list }));
     else if (type === 'return-pickup') setReturnPickupSuggestions(list);
     else if (type === 'return-dropoff') setReturnDropoffSuggestions(list);
     else if (type.startsWith('stop-return-')) setReturnStopSuggestions(prev => ({ ...prev, [type]: list }));
@@ -425,25 +441,11 @@ export default function Home() {
   };
 
   const selectLocation = (type: string, name: string, coords: LngLat) => {
-    let map: any;
-    let startMarker: React.MutableRefObject<any>;
-    let endMarker: React.MutableRefObject<any>;
     let routeWaypoints: React.MutableRefObject<{ pickup: LngLat | null; dropoff: LngLat | null; stops: (LngLat | null)[]; }>;
     let setSuggestions: any;
 
     const isReturn = type.includes('return');
-
-    if (isReturn) {
-      map = returnMapRef.current;
-      startMarker = retStartMarker;
-      endMarker = retEndMarker;
-      routeWaypoints = routeWaypointsRet;
-    } else {
-      map = outboundMapRef.current;
-      startMarker = outStartMarker;
-      endMarker = outEndMarker;
-      routeWaypoints = routeWaypointsOut;
-    }
+    routeWaypoints = isReturn ? routeWaypointsRet : routeWaypointsOut;
 
     // Determine specific setters
     if (type === 'pickup') { setPickup(name); setSuggestions = setPickupSuggestions; }
@@ -453,40 +455,22 @@ export default function Home() {
     else if (type === 'return-dropoff') { setReturnDropoff(name); setSuggestions = setReturnDropoffSuggestions; }
     else if (type.startsWith('stop-return-')) { setSuggestions = (prev:any) => ({...prev, [type]: []}); }
 
-    if (!map && !hasReturnTrip && isReturn) {
-        // Just set state if map isn't ready (e.g., just opened return)
-        // Handled by generic update, but map logic skipped
-    } 
-
     if (type.includes('pickup')) {
       routeWaypoints.current.pickup = coords;
-      if (startMarker.current) startMarker.current.remove();
-      if(map) {
-          startMarker.current = new window.mapboxgl.Marker({ color: '#D4AF37' }).setLngLat(coords).addTo(map);
-          map.flyTo({ center: coords, zoom: 13 });
-      }
       setSuggestions([]);
     } else if (type.includes('dropoff')) {
       routeWaypoints.current.dropoff = coords;
-      if (endMarker.current) endMarker.current.remove();
-      if(map) endMarker.current = new window.mapboxgl.Marker({ color: '#ef4444' }).setLngLat(coords).addTo(map);
       setSuggestions([]);
     } else if (type.includes('stop')) {
-      // Handles both stop-1 and stop-return-1
       const parts = type.split('-');
-      // idx is last part - 1
       const idx = parseInt(parts[parts.length - 1]) - 1;
       
       if(isReturn) {
           setReturnStops(prev => prev.map((val, i) => i === idx ? name : val));
           routeWaypoints.current.stops[idx] = coords;
-          if (retStopMarkers.current[type]) retStopMarkers.current[type].remove();
-          if(map) retStopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
       } else {
           setStops(prev => prev.map((val, i) => i === idx ? name : val));
           routeWaypoints.current.stops[idx] = coords;
-          if (outStopMarkers.current[type]) outStopMarkers.current[type].remove();
-          if(map) outStopMarkers.current[type] = new window.mapboxgl.Marker({ color: '#3b82f6', scale: 0.8 }).setLngLat(coords).addTo(map);
       }
       setSuggestions([]);
     }
@@ -496,8 +480,65 @@ export default function Home() {
     else calculateRouteOut();
   };
 
+  const updateMapBounds = useCallback(() => {
+    if (!mapRef.current || !window.mapboxgl) return;
+    
+    const bounds = new window.mapboxgl.LngLatBounds();
+    let hasPoints = false;
+
+    // Collect all points
+    const addPoint = (p: LngLat | null) => {
+        if(p) {
+            bounds.extend(p);
+            hasPoints = true;
+        }
+    };
+
+    addPoint(routeWaypointsOut.current.pickup);
+    addPoint(routeWaypointsOut.current.dropoff);
+    routeWaypointsOut.current.stops.forEach(addPoint);
+
+    if (hasReturnTrip) {
+        addPoint(routeWaypointsRet.current.pickup);
+        addPoint(routeWaypointsRet.current.dropoff);
+        routeWaypointsRet.current.stops.forEach(addPoint);
+    }
+
+    if (hasPoints) {
+        mapRef.current.fitBounds(bounds, { padding: 80, animate: true });
+    }
+  }, [hasReturnTrip]);
+
+  const addMarker = (coords: LngLat, color: string) => {
+      if (!mapRef.current || !window.mapboxgl) return;
+      const marker = new window.mapboxgl.Marker({ color }).setLngLat(coords).addTo(mapRef.current);
+      markersRef.current.push(marker);
+  };
+
+  const clearMarkers = () => {
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
+  };
+
+  const refreshMarkers = () => {
+      clearMarkers();
+      const wpOut = routeWaypointsOut.current;
+      const wpRet = routeWaypointsRet.current;
+
+      if(wpOut.pickup) addMarker(wpOut.pickup, '#D4AF37'); // Gold
+      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444'); // Red
+      wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
+
+      if (hasReturnTrip) {
+          if(wpRet.pickup) addMarker(wpRet.pickup, '#60a5fa'); // Light Blue
+          if(wpRet.dropoff) addMarker(wpRet.dropoff, '#ef4444');
+          wpRet.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
+      }
+  };
+
   const calculateRouteOut = () => {
-    if (!routeWaypointsOut.current.pickup || !routeWaypointsOut.current.dropoff || !outboundMapRef.current) return;
+    if (!routeWaypointsOut.current.pickup || !routeWaypointsOut.current.dropoff || !mapRef.current) return;
+    
     let coords: LngLat[] = [routeWaypointsOut.current.pickup];
     routeWaypointsOut.current.stops.forEach(s => { if (s) coords.push(s); });
     coords.push(routeWaypointsOut.current.dropoff);
@@ -513,22 +554,22 @@ export default function Home() {
       setDistanceDisplay((distMiles + retDistanceMiles).toFixed(1) + ' mi');
       setDistanceHidden(false);
       
-      if (outboundMapRef.current.getSource('route')) {
-        outboundMapRef.current.getSource('route').setData(r.geometry);
+      const layerId = 'route-outbound';
+      if (mapRef.current.getSource(layerId)) {
+        mapRef.current.getSource(layerId).setData(r.geometry);
       } else {
-        outboundMapRef.current.addLayer({
-            id: 'route', type: 'line', source: { type: 'geojson', data: r.geometry },
-            paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
+        mapRef.current.addLayer({
+            id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
+            paint: { 'line-color': '#D4AF37', 'line-width': 5, 'line-opacity': 0.9 }
         });
       }
-      const bounds = new window.mapboxgl.LngLatBounds();
-      coords.forEach(c => bounds.extend(c));
-      outboundMapRef.current.fitBounds(bounds, { padding: 80 });
+      refreshMarkers();
+      updateMapBounds();
     });
   };
 
   const calculateRouteReturn = () => {
-    if (!routeWaypointsRet.current.pickup || !routeWaypointsRet.current.dropoff) return;
+    if (!routeWaypointsRet.current.pickup || !routeWaypointsRet.current.dropoff || !mapRef.current) return;
     
     let coords: LngLat[] = [routeWaypointsRet.current.pickup];
     routeWaypointsRet.current.stops.forEach(s => { if (s) coords.push(s); });
@@ -544,19 +585,17 @@ export default function Home() {
       setRetDistanceMiles(distMiles);
       setDistanceDisplay((outDistanceMiles + distMiles).toFixed(1) + ' mi');
       
-      if (returnMapRef.current) {
-          if (returnMapRef.current.getSource('route')) {
-            returnMapRef.current.getSource('route').setData(r.geometry);
-          } else {
-            returnMapRef.current.addLayer({
-                id: 'route', type: 'line', source: { type: 'geojson', data: r.geometry },
-                paint: { 'line-color': '#D4AF37', 'line-width': 4, 'line-opacity': 0.8 }
-            });
-          }
-          const bounds = new window.mapboxgl.LngLatBounds();
-          coords.forEach(c => bounds.extend(c));
-          returnMapRef.current.fitBounds(bounds, { padding: 80 });
+      const layerId = 'route-return';
+      if (mapRef.current.getSource(layerId)) {
+        mapRef.current.getSource(layerId).setData(r.geometry);
+      } else {
+        mapRef.current.addLayer({
+            id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
+            paint: { 'line-color': '#60a5fa', 'line-width': 4, 'line-opacity': 0.8, 'line-dasharray': [2, 1] }
+        });
       }
+      refreshMarkers();
+      updateMapBounds();
     });
   };
 
@@ -577,20 +616,10 @@ export default function Home() {
     if (isReturn) {
         setReturnStops(prev => prev.filter((_, i) => i !== index));
         routeWaypointsRet.current.stops.splice(index, 1);
-        const type = `stop-return-${index + 1}`;
-        if (retStopMarkers.current[type]) {
-            retStopMarkers.current[type].remove();
-            delete retStopMarkers.current[type];
-        }
         calculateRouteReturn();
     } else {
         setStops(prev => prev.filter((_, i) => i !== index));
         routeWaypointsOut.current.stops.splice(index, 1);
-        const type = `stop-${index + 1}`;
-        if (outStopMarkers.current[type]) {
-            outStopMarkers.current[type].remove();
-            delete outStopMarkers.current[type];
-        }
         calculateRouteOut();
     }
   };
@@ -649,15 +678,9 @@ export default function Home() {
     routeWaypointsOut.current.pickup = routeWaypointsOut.current.dropoff;
     routeWaypointsOut.current.dropoff = temp;
     
-    if (outStartMarker.current && outEndMarker.current) {
-      const tLoc = outStartMarker.current.getLngLat();
-      outStartMarker.current.setLngLat(outEndMarker.current.getLngLat());
-      outEndMarker.current.setLngLat(tLoc);
-    }
     calculateRouteOut();
 
     if (hasReturnTrip) {
-      // If swapped outbound, return trip defaults (drop->pick, pick->drop) are also inherently swapped
       setReturnPickup(dropoff); setReturnDropoff(tempPickup);
       routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
       routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
@@ -716,7 +739,6 @@ export default function Home() {
     setHasReturnTrip(true);
     setReturnPickup(dropoff);
     setReturnDropoff(pickup);
-    // Logic: Return Pickup = Outbound Dropoff. Return Dropoff = Outbound Pickup.
     routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
     routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
     
@@ -732,33 +754,33 @@ export default function Home() {
       {/* HEADER */}
       <header id="site-header" className={`fixed z-50 transition-all duration-500 ease-in-out ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="glow-wrapper mx-auto">
-          <div className="glow-content flex items-center justify-between px-4 sm:px-6 h-16 md:h-[70px] transition-all">
+          <div className="glow-content flex items-center justify-between px-4 sm:px-6 h-[60px] transition-all">
             <div className="collapsible-element flex-shrink-0 flex items-center mr-4">
               <a href="/" className="group block py-2">
-                <div className="font-serif font-bold tracking-widest text-gradient-gold drop-shadow-md group-hover:opacity-90 transition flex items-center gap-2">
-                  <span className="text-xl">FARE</span>
-                  <span className="text-2xl pt-1">1</span>
-                  <span className="text-xl">TAXI</span>
+                <div className="font-serif font-bold tracking-widest text-gradient-gold drop-shadow-md group-hover:opacity-90 transition flex items-center gap-1.5">
+                  <span className="text-lg">FARE</span>
+                  <span className="text-xl pt-0.5 text-white">1</span>
+                  <span className="text-lg">TAXI</span>
                 </div>
               </a>
             </div>
             
             <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-              <a href="tel:+442381112682" className="flex items-center gap-2 bg-secondaryBg/80 border border-brand/40 text-brand hover:bg-brand hover:text-primaryBg px-3 py-2 rounded-full transition-all duration-300 group backdrop-blur-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 fill-current" viewBox="0 0 24 24">
+              <a href="tel:+442381112682" className="flex items-center gap-2 bg-secondaryBg/80 border border-brand/40 text-brand hover:bg-brand hover:text-primaryBg px-3 py-1.5 rounded-full transition-all duration-300 group backdrop-blur-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                   <path d="M6.62 10.79a15.91 15.91 0 006.59 6.59l2.2-2.2a1 1 0 011.11-.27c1.12.44 2.33.68 3.58.68.55 0 1 .45 1 1V20c0 .55-.45 1-1 1A17 17 0 013 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.24 2.46.68 3.58.27.4.27.81-.27 1.11l-2.29 2.1z"/>
                 </svg>
                 <span className="hidden sm:inline font-semibold text-sm tracking-wide">+44 2381 112682</span>
               </a>
-              <a href="https://wa.me/442381112682" target="_blank" className="flex items-center gap-2 bg-secondaryBg/80 border border-brand/40 text-brand hover:bg-[#25D366] hover:text-white hover:border-[#25D366] px-3 py-2 rounded-full transition-all duration-300 backdrop-blur-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 fill-current" viewBox="0 0 24 24">
+              <a href="https://wa.me/442381112682" target="_blank" className="flex items-center gap-2 bg-secondaryBg/80 border border-brand/40 text-brand hover:bg-[#25D366] hover:text-white hover:border-[#25D366] px-3 py-1.5 rounded-full transition-all duration-300 backdrop-blur-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                   <path d="M12.031 0C5.396 0 0 5.396 0 12.031c0 2.124.554 4.168 1.605 5.986L.057 24l6.19-1.625c1.748.954 3.741 1.456 5.784 1.456 6.635 0 12.031-5.396 12.031-12.031C24.062 5.396 18.666 0 12.031 0zm0 21.86c-1.845 0-3.647-.49-5.234-1.416l-.375-.22-3.878 1.018 1.035-3.78-.245-.388c-1.035-1.64-1.583-3.548-1.583-5.513 0-5.696 4.635-10.331 10.331-10.331 5.696 0 10.331 4.635 10.331 10.331 0 5.696-4.635 10.331-10.331 10.331z"/>
                 </svg>
                 <span className="hidden sm:inline font-semibold text-sm tracking-wide">Chat</span>
               </a>
             </div>
             
-            <div className="collapsible-element ml-4">
+            <div className="collapsible-element ml-3">
               <button type="button" onClick={() => setMenuOpen(!menuOpen)} className="inline-flex items-center justify-center p-2 rounded-md text-brand hover:text-white focus:outline-none transition-colors">
                 <div className={`hamburger ${menuOpen ? 'active' : ''}`}>
                     <span></span><span></span><span></span>
@@ -769,8 +791,8 @@ export default function Home() {
         </div>
 
         {/* Premium Hamburger Menu */}
-        <div id="mobile-menu" className={`fixed inset-0 top-[70px] bg-black/90 backdrop-blur-xl border-t border-brand-gold/10 z-[49] flex flex-col justify-between pb-10 transition-all duration-300 ${menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-          <div className="flex flex-col items-center justify-center space-y-4 pt-10 px-6">
+        <div id="mobile-menu" className={`fixed inset-0 top-[60px] bg-black/95 backdrop-blur-xl border-t border-brand-gold/10 z-[49] flex flex-col justify-between pb-10 transition-all duration-300 ${menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+          <div className="flex flex-col items-center justify-center space-y-6 pt-10 px-6">
             <a href="https://fare1.co.uk/airport-taxi-transfers-uk-cruise-port-long-distance" className="text-xl font-bold text-white hover:text-brand-gold transition-colors tracking-wide">Home</a>
             <a href="https://airporttaxis24-7.com/" className="text-xl font-bold text-white hover:text-brand-gold transition-colors tracking-wide">Airport Transfers</a>
             
@@ -780,7 +802,7 @@ export default function Home() {
                     <svg className={`w-4 h-4 transition-transform ${servicesOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 <div className={`overflow-hidden transition-all duration-300 ${servicesOpen ? 'max-h-60 mt-3 opacity-100' : 'max-h-0 opacity-0'}`}>
-                    <div className="flex flex-col space-y-3 bg-white/5 p-4 rounded-xl border border-white/5">
+                    <div className="flex flex-col space-y-3 bg-white/5 p-4 rounded-xl border border-white/5 mx-auto max-w-xs">
                         <a href="https://airporttaxis24-7.com/" className="text-sm text-gray-300 hover:text-brand-gold">Airport Transfers</a>
                         <a href="https://fare1.co.uk/cruise-transfer" className="text-sm text-gray-300 hover:text-brand-gold">Cruise Ship Transfers</a>
                         <a href="https://fare1.co.uk/chauffeur-service" className="text-sm text-gray-300 hover:text-brand-gold">Chauffeur Services</a>
@@ -789,46 +811,26 @@ export default function Home() {
                 </div>
             </div>
 
-            <div className="flex flex-col items-center gap-2 mt-4">
-                <a href="tel:+442381112682" className="text-brand-gold font-mono text-lg">+44 2381 112682</a>
-                <a href="https://wa.me/442381112682" className="text-green-400 text-sm font-bold flex items-center gap-2">
-                    <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    WhatsApp Us
+            <div className="flex flex-col items-center gap-3 mt-6">
+                <a href="tel:+442381112682" className="text-brand-gold font-mono text-lg font-bold">+44 2381 112682</a>
+                <a href="https://wa.me/442381112682" className="text-green-400 text-sm font-bold flex items-center gap-2 bg-green-900/20 px-4 py-2 rounded-full">
+                    <Icons.Google /> WhatsApp Us
                 </a>
             </div>
           </div>
           
           <div className="flex justify-center gap-6 mt-auto">
-            {['Facebook', 'Tiktok', 'Instagram', 'Google'].map(social => (
-                <div key={social} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-brand-gold hover:text-black transition-colors cursor-pointer">
-                    <span className="text-xs font-bold">{social[0]}</span>
-                </div>
-            ))}
+            <a href="#" className="social-icon"><Icons.Facebook /></a>
+            <a href="#" className="social-icon"><Icons.TikTok /></a>
+            <a href="#" className="social-icon"><Icons.Instagram /></a>
+            <a href="#" className="social-icon"><Icons.Google /></a>
           </div>
         </div>
-
       </header>
 
-      {/* SPLIT MAP VIEW */}
-      <div className="fixed inset-0 h-[45vh] z-0 flex">
-        {/* Left: Return Map (Visible only when return active) */}
-        {hasReturnTrip && (
-            <div className="w-1/2 h-full relative border-r-2 border-brand-gold/50 shadow-xl z-10">
-                 <div ref={returnMapContainerRef} className="w-full h-full"></div>
-                 <div className="absolute top-4 left-4 bg-black/70 backdrop-blur px-3 py-1 rounded-lg border border-white/10">
-                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Return Leg</span>
-                 </div>
-            </div>
-        )}
-        {/* Right: Outbound Map */}
-        <div className={`${hasReturnTrip ? 'w-1/2' : 'w-full'} h-full relative transition-all duration-500 ease-in-out`}>
-            <div ref={outboundMapContainerRef} className="w-full h-full"></div>
-            {hasReturnTrip && (
-                 <div className="absolute top-4 right-4 bg-black/70 backdrop-blur px-3 py-1 rounded-lg border border-white/10">
-                    <span className="text-[10px] font-bold text-brand-gold uppercase tracking-wider">Outbound</span>
-                 </div>
-            )}
-        </div>
+      {/* SINGLE MAP INSTANCE */}
+      <div className="fixed inset-0 h-[45vh] z-0">
+        <div ref={mapContainerRef} className="w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-primary-black pointer-events-none"></div>
       </div>
 
@@ -864,12 +866,12 @@ export default function Home() {
                          handleTyping('pickup', e.target.value);
                        }}
                        value={pickup}
-                       className="text-[15px] font-medium"/>
+                       className="text-[15px] font-medium w-full"/>
                 <button onClick={swapLocations} className="ml-2 p-1.5 rounded-full hover:bg-white/10 transition">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
                 </button>
               </div>
-              <ul id="list-pickup" className="suggestions-list" style={{display: pickupSuggestions.length > 0 ? 'block' : 'none'}}>
+              <ul className="suggestions-list" style={{display: pickupSuggestions.length > 0 ? 'block' : 'none'}}>
                 {pickupSuggestions.map((item, i) => (
                   item.isHeader ?
                     <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
@@ -924,9 +926,9 @@ export default function Home() {
                          handleTyping('dropoff', e.target.value);
                        }}
                        value={dropoff}
-                       className="text-[15px] font-medium"/>
+                       className="text-[15px] font-medium w-full"/>
               </div>
-              <ul id="list-dropoff" className="suggestions-list" style={{display: dropoffSuggestions.length > 0 ? 'block' : 'none'}}>
+              <ul className="suggestions-list" style={{display: dropoffSuggestions.length > 0 ? 'block' : 'none'}}>
                 {dropoffSuggestions.map((item, i) => (
                   item.isHeader ?
                     <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
@@ -981,7 +983,7 @@ export default function Home() {
             <div className="sm:col-span-2">
               {!hasReturnTrip ? (
                 showReturnButton && (
-                    <button onClick={addReturnTrip} className="w-full py-3.5 bg-secondary-black border border-brand-gold/30 text-brand-gold font-bold rounded-xl hover:bg-brand-gold hover:text-black transition-all duration-300 flex items-center justify-center uppercase tracking-widest text-xs shadow-lg transform active:scale-95">
+                    <button onClick={addReturnTrip} className="w-full py-3.5 bg-gradient-to-r from-secondary-black to-black border border-brand-gold/40 text-brand-gold font-bold rounded-xl hover:shadow-[0_0_15px_rgba(212,175,55,0.2)] transition-all duration-300 flex items-center justify-center uppercase tracking-widest text-xs">
                       Add Return Trip +
                     </button>
                 )
@@ -1007,7 +1009,7 @@ export default function Home() {
                                  handleTyping('return-pickup', e.target.value);
                                }}
                                value={returnPickup}
-                               className="text-[15px] font-medium"/>
+                               className="text-[15px] font-medium w-full"/>
                       </div>
                       <ul className="suggestions-list" style={{display: returnPickupSuggestions.length > 0 ? 'block' : 'none'}}>
                         {returnPickupSuggestions.map((item, i) => (
@@ -1069,7 +1071,7 @@ export default function Home() {
                                  handleTyping('return-dropoff', e.target.value);
                                }}
                                value={returnDropoff}
-                               className="text-[15px] font-medium"/>
+                               className="text-[15px] font-medium w-full"/>
                       </div>
                       <ul className="suggestions-list" style={{display: returnDropoffSuggestions.length > 0 ? 'block' : 'none'}}>
                         {returnDropoffSuggestions.map((item, i) => (
@@ -1181,6 +1183,22 @@ export default function Home() {
                   </span>
               </div>
 
+              {/* CHOOSE YOUR JOURNEY SECTION - Moved Here */}
+              <div ref={chooseJourneyRef} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+                  {[
+                      { title: "Airport Transfer", desc: "Reliable connections to all major UK airports.", Icon: Icons.Plane, link: "https://airporttaxis24-7.com/" },
+                      { title: "Cruise Transport", desc: "Start your voyage with our premium port transfers.", Icon: Icons.Ship, link: "https://fare1.co.uk/cruise-transfer" },
+                      { title: "Taxi Journeys", desc: "Long-distance travel in executive comfort.", Icon: Icons.Taxi, link: "https://booking.fare1.co.uk/" }
+                  ].map((s, i) => (
+                      <a key={i} href={s.link} className="glass-card bg-black/40 hover:bg-black/60 border border-black/10 hover:border-brand-gold/50 rounded-2xl p-8 text-center transition-all duration-300 group flex flex-col items-center shadow-lg">
+                          <s.Icon />
+                          <h3 className="text-xl font-bold text-white mb-2 font-heading">{s.title}</h3>
+                          <p className="text-gray-300 text-sm mb-4 font-medium">{s.desc}</p>
+                          <span className="text-brand-gold text-xs font-bold uppercase tracking-widest mt-auto group-hover:underline">View Service</span>
+                      </a>
+                  ))}
+              </div>
+
               {/* Accordion */}
               <div className="max-w-3xl mx-auto space-y-2 mb-10 text-left">
                   {[
@@ -1210,194 +1228,40 @@ export default function Home() {
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 px-2">
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="absolute top-0 right-0 bg-gradient-to-r from-brand-gold to-[#ffeead] text-primary-black text-[10px] font-extrabold px-4 py-1.5 rounded-bl-2xl uppercase tracking-widest z-10 shadow-md">Popular Choice</div>
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Heathrow Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£99</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/heathrow-airport/?pickup=Southampton&dropoff=Heathrow%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Gatwick Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£130</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/gatwick-airport/?pickup=Southampton&dropoff=Gatwick%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bristol Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£160</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/bristol-airport/?pickup=Southampton&dropoff=Bristol%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-red-500 text-white text-[10px] font-extrabold px-4 py-1.5 rounded-br-2xl uppercase tracking-widest z-10 shadow-md">Best Value</div>
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Bournemouth Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£65</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/bournemouth-airport/?pickup=Southampton&dropoff=Bournemouth%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                {/* SPLIT LUTON/EXETER */}
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Luton Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£170</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/luton-airport/?pickup=Southampton&dropoff=Luton%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Exeter Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£170</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/exeter-airport/?pickup=Southampton&dropoff=Exeter%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Stansted Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£220</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/stansted-airport/?pickup=Southampton&dropoff=Stansted%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">London City Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£190</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/london-city-airport/?pickup=Southampton&dropoff=London%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
-                <div className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
-                  <div className="flex justify-between items-end mb-6 opacity-70">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
-                    <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
-                  </div>
-                  <div className="flex flex-col gap-1 mb-8 text-center">
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
-                    <div className="text-brand-gold text-sm my-1">to</div>
-                    <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Brighton City Airport</div>
-                  </div>
-                  <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
-                    <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£100</span>
-                  </div>
-                  <div className="mt-8 text-center">
-                    <a href="https://southampton.airporttaxis24-7.com/brighton-city-airport/?pickup=Southampton&dropoff=Brighton%20City%20Airport" className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
-                  </div>
-                </div>
+                {/* RATES CARDS - Keeping original content/links */}
+                {[
+                    { name: 'Heathrow Airport', price: '99', link: 'https://southampton.airporttaxis24-7.com/heathrow-airport/?pickup=Southampton&dropoff=Heathrow%20Airport' },
+                    { name: 'Gatwick Airport', price: '130', link: 'https://southampton.airporttaxis24-7.com/gatwick-airport/?pickup=Southampton&dropoff=Gatwick%20Airport' },
+                    { name: 'Bristol Airport', price: '160', link: 'https://southampton.airporttaxis24-7.com/bristol-airport/?pickup=Southampton&dropoff=Bristol%20Airport' },
+                    { name: 'Bournemouth Airport', price: '65', link: 'https://southampton.airporttaxis24-7.com/bournemouth-airport/?pickup=Southampton&dropoff=Bournemouth%20Airport', tag: 'Best Value' },
+                    { name: 'Luton Airport', price: '170', link: 'https://southampton.airporttaxis24-7.com/luton-airport/?pickup=Southampton&dropoff=Luton%20Airport' },
+                    { name: 'Exeter Airport', price: '170', link: 'https://southampton.airporttaxis24-7.com/exeter-airport/?pickup=Southampton&dropoff=Exeter%20Airport' },
+                    { name: 'Stansted Airport', price: '220', link: 'https://southampton.airporttaxis24-7.com/stansted-airport/?pickup=Southampton&dropoff=Stansted%20Airport' },
+                    { name: 'London City Airport', price: '190', link: 'https://southampton.airporttaxis24-7.com/london-city-airport/?pickup=Southampton&dropoff=London%20City%20Airport' },
+                    { name: 'Brighton City Airport', price: '100', link: 'https://southampton.airporttaxis24-7.com/brighton-city-airport/?pickup=Southampton&dropoff=Brighton%20City%20Airport' }
+                ].map((item, idx) => (
+                    <div key={idx} className="price-card bg-secondary-black p-6 md:p-8 rounded-3xl border border-brand-gold/20 relative overflow-hidden group shadow-2xl hover:shadow-gold-glow">
+                        {item.tag && <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-red-500 text-white text-[10px] font-extrabold px-4 py-1.5 rounded-br-2xl uppercase tracking-widest z-10 shadow-md">{item.tag}</div>}
+                        <div className="flex justify-between items-end mb-6 opacity-70">
+                            <div className="text-gray-400 text-xs font-bold uppercase tracking-widest">Direct Route</div>
+                            <div className="text-brand-gold text-xs font-bold uppercase tracking-widest">Fixed Fare</div>
+                        </div>
+                        <div className="flex flex-col gap-1 mb-8 text-center">
+                            <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">Southampton</div>
+                            <div className="text-brand-gold text-sm my-1">to</div>
+                            <div className="text-white font-heading font-black text-xl md:text-2xl leading-none">{item.name}</div>
+                        </div>
+                        <div className="text-center py-5 border-t border-white/10 border-b border-white/10 bg-primary-black/30 -mx-6 md:-mx-8">
+                            <span className="text-5xl md:text-6xl font-black text-brand-gold tracking-tighter drop-shadow-md">£{item.price}</span>
+                        </div>
+                        <div className="mt-8 text-center">
+                            <a href={item.link} className="inline-block w-full py-3.5 bg-brand-gold text-primary-black font-black uppercase text-sm rounded-xl hover:bg-white hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">Book This Deal</a>
+                        </div>
+                    </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
-
-        {/* CHOOSE YOUR JOURNEY SECTION */}
-        <div ref={chooseJourneyRef} className="bg-[#050505] py-20 relative font-sans border-t border-brand-gold/10">
-            <div className="w-[90%] mx-auto max-w-6xl relative z-10">
-                <h2 className="text-3xl md:text-5xl font-heading font-black text-center text-white mb-16 uppercase drop-shadow-lg">
-                    Choose Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold to-yellow-200">Journey</span>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {[
-                        { title: "Airport Transfer", desc: "Reliable connections to all major UK airports.", img: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", link: "https://airporttaxis24-7.com/" },
-                        { title: "Cruise Transport", desc: "Start your voyage with our premium port transfers.", img: "https://images.unsplash.com/photo-1548286979-4592a884f378?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", link: "https://fare1.co.uk/cruise-transfer" },
-                        { title: "Taxi Journeys", desc: "Long-distance travel in executive comfort.", img: "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", link: "https://booking.fare1.co.uk/" }
-                    ].map((s, i) => (
-                        <a key={i} href={s.link} className="group relative h-96 rounded-2xl overflow-hidden shadow-2xl">
-                            <img src={s.img} alt={s.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
-                            <div className="absolute bottom-0 left-0 p-8">
-                                <h3 className="text-2xl font-bold text-white mb-2">{s.title}</h3>
-                                <p className="text-gray-300 text-sm mb-4">{s.desc}</p>
-                                <span className="text-brand-gold text-xs font-bold uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
-                                    Book Now <span className="text-lg">→</span>
-                                </span>
-                            </div>
-                        </a>
-                    ))}
-                </div>
-            </div>
         </div>
 
         {/* FEEDBACK SECTION */}
@@ -1446,15 +1310,7 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="mt-4 flex items-center gap-1 opacity-40">
-                    <div className="w-4 h-4 grayscale opacity-70">
-                      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                      </svg>
-                    </div>
-                    <span className="text-[9px] text-gray-400 uppercase tracking-wider">Verified Review</span>
+                    <span className="text-[9px] text-gray-400 uppercase tracking-wider flex items-center gap-1">Verified Review <Icons.Google /></span>
                   </div>
                 </div>
               )) : <div className="text-gray-500 w-full text-center text-sm">No reviews available via API yet.</div>}
