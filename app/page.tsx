@@ -6,15 +6,23 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 // --- TypeScript Definitions ---
 type LngLat = [number, number];
+
 interface PresetItem {
   name: string;
   center: LngLat;
 }
+
 interface SuggestionItem {
   text: string;
   center: LngLat;
   isHeader?: boolean;
   name?: string;
+}
+
+interface RouteWaypoints {
+  pickup: LngLat | null;
+  dropoff: LngLat | null;
+  stops: (LngLat | null)[];
 }
 
 declare global {
@@ -171,20 +179,27 @@ export default function Home() {
   // Markers & Waypoints
   const markersRef = useRef<any[]>([]);
   
-  const routeWaypointsOut = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
-  const routeWaypointsRet = useRef<{ pickup: LngLat | null, dropoff: LngLat | null, stops: (LngLat | null)[] }>({ pickup: null, dropoff: null, stops: [] });
+  const routeWaypointsOut = useRef<RouteWaypoints>({ pickup: null, dropoff: null, stops: [] });
+  const routeWaypointsRet = useRef<RouteWaypoints>({ pickup: null, dropoff: null, stops: [] });
   
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Logic Helpers ---
 
+  // Cross-Domain Cookie Setter
   const setCookie = (name: string, value: string, days: number) => {
     const d = new Date();
     d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
     const expires = "expires=" + d.toUTCString();
-    // Wildcard domain for cross-subdomain support
-    document.cookie = `${name}=${value};${expires};path=/;domain=.fare1.co.uk;SameSite=Lax`;
+    
+    // Cross-subdomain strategy:
+    // This allows cookies to be shared with booking.fare1.co.uk and other subdomains
+    // Note: This requires the app to be running on fare1.co.uk or a subdomain of it.
+    // If running on localhost, the domain attribute might prevent the cookie from being set, 
+    // so we conditionally add it.
+    const domain = window.location.hostname.includes('fare1.co.uk') ? ";domain=.fare1.co.uk" : "";
+    document.cookie = `${name}=${value};${expires};path=/${domain};SameSite=Lax`;
   };
 
   const showToast = (msg: string) => {
@@ -192,41 +207,77 @@ export default function Home() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const updatePulseMarker = (coords: LngLat) => {
+      if (!mapRef.current || !window.mapboxgl) return;
+      
+      if (!pulseMarkerRef.current) {
+          const el = document.createElement('div');
+          el.className = 'marker-pulse';
+          pulseMarkerRef.current = el;
+          new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
+      } else {
+          // Update position if it exists (though Mapbox markers are objects, we re-instantiate lightly or track the marker obj if needed)
+          // Since we store the DOM element, we need the Mapbox Marker instance. 
+          // For simplicity in this refactor, we remove the old DOM element logic 
+          // and treat the marker as a visual overlay managed by Mapbox.
+          // Correct approach: Find marker associated with element or simpler, just create new if logic permits.
+          // Here, we'll remove the old marker element visually if we could, 
+          // but better to just create it once. If coords change, we'd need the marker instance.
+          // Since we are not storing the pulse marker instance in a ref (only the DIV), 
+          // let's clear existing pulse markers by class before adding new.
+          const existing = document.getElementsByClassName('marker-pulse');
+          while(existing.length > 0){
+              existing[0].remove();
+          }
+          const el = document.createElement('div');
+          el.className = 'marker-pulse';
+          pulseMarkerRef.current = el;
+          new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
+      }
+  };
+
   const handleLocationSuccess = (pos: GeolocationPosition) => {
     const coords: LngLat = [pos.coords.longitude, pos.coords.latitude];
     setUserLocation(coords);
     
-    // Save to cookie
+    // Save to cookie (Cross-subdomain)
     setCookie('fare1_user_loc', JSON.stringify(coords), 7);
+    
+    // Auto-consent if we got location successfully implies permission granted
+    // setCookie('fare1_consent', 'true', 365); // Optional: implied consent for functionality
 
     // Center Map
     if (mapRef.current) {
       mapRef.current.flyTo({ center: coords, zoom: 14 });
-      
-      // Add Pulse Marker
-      if (!pulseMarkerRef.current) {
-        const el = document.createElement('div');
-        el.className = 'marker-pulse';
-        pulseMarkerRef.current = el;
-        new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
-      } else {
-        // If already exists (re-trigger), just update pos
-        // Note: mapbox markers are objects, simplified here to just creating new if not ref stored properly
-      }
+      updatePulseMarker(coords);
     }
-    
-    // Auto-fill suggestions logic handled in suggestions
+  };
+
+  const triggerLocationCheck = (isManualRefresh = false) => {
+      if (!navigator.geolocation) return;
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            handleLocationSuccess(pos);
+            if (isManualRefresh) showToast("Location updated!");
+        },
+        (err) => {
+          // If denied/pending, check for consent cookie
+          const hasConsent = document.cookie.split(';').some(c => c.trim().startsWith('fare1_consent='));
+          if (!hasConsent && !isManualRefresh) {
+              setShowConsentBanner(true);
+          } else if (isManualRefresh) {
+              showToast("Location access denied. Please enable permissions.");
+          }
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
   };
 
   const handleConsentAllow = () => {
     setCookie('fare1_consent', 'true', 365);
     setShowConsentBanner(false);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        handleLocationSuccess,
-        (err) => showToast("Location access denied. You can still search manually.")
-      );
-    }
+    triggerLocationCheck();
   };
 
   // --- Initialization & Effects ---
@@ -296,6 +347,17 @@ export default function Home() {
         mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
         
         mapRef.current.on('load', () => {
+            // Check if we have a saved location in cookie to init map center immediately
+            const locCookie = document.cookie.split('; ').find(row => row.startsWith('fare1_user_loc='));
+            if (locCookie) {
+                try {
+                    const savedLoc = JSON.parse(locCookie.split('=')[1]);
+                    setUserLocation(savedLoc);
+                    mapRef.current.setCenter(savedLoc);
+                    updatePulseMarker(savedLoc);
+                } catch(e) {}
+            }
+
             if (routeWaypointsOut.current.pickup && routeWaypointsOut.current.dropoff) {
                 calculateRouteOut();
             }
@@ -303,18 +365,8 @@ export default function Home() {
       }
     }
 
-    // Geolocation Request on Load
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        handleLocationSuccess,
-        (err) => {
-          // If denied/pending, check for consent cookie
-          const hasConsent = document.cookie.split(';').some(c => c.trim().startsWith('fare1_consent='));
-          if (!hasConsent) setShowConsentBanner(true);
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    }
+    // Geolocation Request on Load (Silent & Immediate)
+    triggerLocationCheck();
 
     // Sheet Scroll Logic
     const sheet = mainSheetRef.current;
@@ -442,8 +494,9 @@ export default function Home() {
     let list: SuggestionItem[] = [];
     
     // Add My Current Location if available and it's a pickup field
+    // Priority Item
     if ((type === 'pickup' || type === 'return-pickup') && userLocation) {
-      list.push({ text: "📍 My Current Location", center: userLocation, name: "Current Location" });
+      list.push({ text: "📍 Use My Current Location", center: userLocation, name: "Current Location" });
     }
 
     Object.keys(PRESET_DATA).forEach(category => {
@@ -488,6 +541,7 @@ export default function Home() {
    
     debounceTimer.current = setTimeout(() => {
       // Improved Geocoding API for UK Postcodes
+      // Added country=gb and types=postcode,address,poi to ensure high precision
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=postcode,address,poi`;
       
       fetch(url)
@@ -507,7 +561,7 @@ export default function Home() {
   };
 
   const selectLocation = (type: string, name: string, coords: LngLat) => {
-    let routeWaypoints: React.MutableRefObject<{ pickup: LngLat | null; dropoff: LngLat | null; stops: (LngLat | null)[]; }>;
+    let routeWaypoints: React.MutableRefObject<RouteWaypoints>;
     let setSuggestions: any;
 
     // Remove emoji from name if present
@@ -523,6 +577,9 @@ export default function Home() {
     else if (type === 'return-dropoff') { setReturnDropoff(cleanName); setSuggestions = setReturnDropoffSuggestions; }
     else if (type.startsWith('stop-return-')) { setSuggestions = (prev:any) => ({...prev, [type]: []}); }
 
+    // Logic to turn Golden Pin to Green if "Use My Current Location" is selected
+    // Note: The coloring happens in refreshMarkers, so we just set coords here.
+    
     if (type.includes('pickup')) {
       routeWaypoints.current.pickup = coords;
       setSuggestions([]);
@@ -572,6 +629,7 @@ export default function Home() {
     }
 
     if (hasPoints) {
+        // Perfect Map Zoom parallelly
         mapRef.current.fitBounds(bounds, { padding: 80, animate: true });
     }
   }, [hasReturnTrip]);
@@ -592,17 +650,20 @@ export default function Home() {
       const wpOut = routeWaypointsOut.current;
       const wpRet = routeWaypointsRet.current;
 
-      // Ensure Pulse Marker stays
-      if (userLocation && pulseMarkerRef.current) {
-        // Pulse marker is managed separately, don't remove it
-      }
+      // Pulse Marker for User Location stays managed by `pulseMarkerRef`, we do not remove it here.
 
-      if(wpOut.pickup) addMarker(wpOut.pickup, '#D4AF37'); 
+      // Map Pins Colors:
+      // Pickup pin: Green (#22c55e)
+      // Destination pin: Red (#ef4444)
+      // Stops pins: Blue (#3b82f6)
+      // For return trip: Pickup pin blue (#3b82f6), destination pin red (#ef4444)
+
+      if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); 
       if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444');
       wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
 
       if (hasReturnTrip) {
-          if(wpRet.pickup) addMarker(wpRet.pickup, '#60a5fa');
+          if(wpRet.pickup) addMarker(wpRet.pickup, '#3b82f6');
           if(wpRet.dropoff) addMarker(wpRet.dropoff, '#ef4444');
           wpRet.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
       }
@@ -898,6 +959,16 @@ export default function Home() {
       <div className="fixed inset-0 h-[45vh] z-0">
         <div ref={mapContainerRef} className="w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-primary-black pointer-events-none"></div>
+        {/* Refresh Button */}
+        <button 
+            onClick={() => triggerLocationCheck(true)}
+            className="absolute bottom-6 right-6 pointer-events-auto bg-black/80 backdrop-blur-md p-3 rounded-full border border-brand-gold/30 hover:bg-brand-gold hover:text-black hover:border-brand-gold transition-all duration-300 shadow-xl group z-20"
+            title="Refresh Location"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-gold group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+        </button>
       </div>
 
       {/* MAIN APP SHEET */}
@@ -1413,18 +1484,18 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CONSENT BANNER (Replaces Modal for Denied/Pending State) */}
+      {/* CONSENT BANNER (Glassmorphism Minimalist) */}
       {showConsentBanner && (
-        <div className="fixed bottom-0 left-0 w-full z-[100] p-4 animate-fade-in-up">
-            <div className="mx-auto max-w-lg glass-card rounded-2xl p-4 border border-brand-gold/30 shadow-2xl bg-black/80 flex items-center justify-between gap-4">
-                <p className="text-[10px] text-gray-300 leading-tight">
-                    Please allow location access and browser cookies for the best experience. By using this website, you agree to our use of cookies.
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-[400px] animate-fade-in-up">
+            <div className="glass-card bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-[10px] text-gray-300 leading-tight text-center sm:text-left">
+                    Please allow location access and browser cookies for the best experience. By using this website, you agree to our use of cookies to provide a great experience and help our website run effectively.
                 </p>
                 <button 
                     onClick={handleConsentAllow}
-                    className="bg-brand-gold text-black text-[10px] font-bold px-4 py-2 rounded-lg hover:bg-white transition-colors uppercase tracking-wider flex-shrink-0"
+                    className="bg-brand-gold text-black text-[10px] font-bold px-5 py-2 rounded-lg hover:bg-white transition-colors uppercase tracking-wider flex-shrink-0 shadow-lg"
                 >
-                    Allow
+                    ALLOW
                 </button>
             </div>
         </div>
