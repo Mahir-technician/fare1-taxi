@@ -79,7 +79,7 @@ const DISCOUNT_MESSAGES = [
   "Special Offer: Southampton to Airport Transfers"
 ];
 
-// Inline SVG Components for Performance
+// Inline SVG Components
 const Icons = {
   Plane: () => <svg className="w-12 h-12 text-brand-gold mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>,
   Ship: () => <svg className="w-12 h-12 text-brand-gold mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V8.25A2.25 2.25 0 0015.75 6H10" /></svg>,
@@ -100,10 +100,14 @@ export default function Home() {
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
   const [bottomBarHiddenScroll, setBottomBarHiddenScroll] = useState(false);
-  const [sheetOverlayOpen, setSheetOverlayOpen] = useState(true);
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
   const [discountMsgIndex, setDiscountMsgIndex] = useState(0);
   const [accordionOpen, setAccordionOpen] = useState<number | null>(0);
+  
+  // New State for Refactor
+  const [showConsentBanner, setShowConsentBanner] = useState(false);
+  const [userLocation, setUserLocation] = useState<LngLat | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Business Logic State
   const [outDistanceMiles, setOutDistanceMiles] = useState(0);
@@ -153,7 +157,8 @@ export default function Home() {
 
   // Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null); // Single Map Instance
+  const mapRef = useRef<any>(null);
+  const pulseMarkerRef = useRef<HTMLDivElement | null>(null);
   
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
@@ -171,6 +176,58 @@ export default function Home() {
   
   const lastScrollTop = useRef(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- Logic Helpers ---
+
+  const setCookie = (name: string, value: string, days: number) => {
+    const d = new Date();
+    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = "expires=" + d.toUTCString();
+    // Wildcard domain for cross-subdomain support
+    document.cookie = `${name}=${value};${expires};path=/;domain=.fare1.co.uk;SameSite=Lax`;
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleLocationSuccess = (pos: GeolocationPosition) => {
+    const coords: LngLat = [pos.coords.longitude, pos.coords.latitude];
+    setUserLocation(coords);
+    
+    // Save to cookie
+    setCookie('fare1_user_loc', JSON.stringify(coords), 7);
+
+    // Center Map
+    if (mapRef.current) {
+      mapRef.current.flyTo({ center: coords, zoom: 14 });
+      
+      // Add Pulse Marker
+      if (!pulseMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'marker-pulse';
+        pulseMarkerRef.current = el;
+        new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
+      } else {
+        // If already exists (re-trigger), just update pos
+        // Note: mapbox markers are objects, simplified here to just creating new if not ref stored properly
+      }
+    }
+    
+    // Auto-fill suggestions logic handled in suggestions
+  };
+
+  const handleConsentAllow = () => {
+    setCookie('fare1_consent', 'true', 365);
+    setShowConsentBanner(false);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        handleLocationSuccess,
+        (err) => showToast("Location access denied. You can still search manually.")
+      );
+    }
+  };
 
   // --- Initialization & Effects ---
 
@@ -205,14 +262,14 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    // Lenis Smooth Scroll - Optimized for Mobile
+    // Lenis Smooth Scroll
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       orientation: 'vertical',
       gestureOrientation: 'vertical',
       wheelMultiplier: 1,
-      touchMultiplier: 1.5, // Lightweight touch
+      touchMultiplier: 1.5, 
       infinite: false,
     });
     
@@ -229,8 +286,8 @@ export default function Home() {
         mapRef.current = new window.mapboxgl.Map({
           container: mapContainerRef.current,
           style: 'mapbox://styles/mapbox/dark-v11',
-          center: [-1.3568, 50.9503], // Default center near Southampton
-          zoom: 9,
+          center: [-1.4043, 50.9097], // Default: Southampton
+          zoom: 11,
           attributionControl: false,
           pitchWithRotate: false
         });
@@ -239,12 +296,24 @@ export default function Home() {
         mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
         
         mapRef.current.on('load', () => {
-            // Re-calc routes if data exists (e.g. fast refresh)
             if (routeWaypointsOut.current.pickup && routeWaypointsOut.current.dropoff) {
                 calculateRouteOut();
             }
         });
       }
+    }
+
+    // Geolocation Request on Load
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        handleLocationSuccess,
+        (err) => {
+          // If denied/pending, check for consent cookie
+          const hasConsent = document.cookie.split(';').some(c => c.trim().startsWith('fare1_consent='));
+          if (!hasConsent) setShowConsentBanner(true);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
     }
 
     // Sheet Scroll Logic
@@ -265,7 +334,6 @@ export default function Home() {
     enableDragScroll(googleReviewsContainerRef.current);
     initReviews();
 
-    // Discount Message Rotator
     const msgInterval = setInterval(() => {
       setDiscountMsgIndex(prev => (prev + 1) % DISCOUNT_MESSAGES.length);
     }, 4000);
@@ -283,7 +351,6 @@ export default function Home() {
     if (hasReturnTrip) {
         calculateRouteReturn();
     } else {
-        // Clear return route if present
         if (mapRef.current && mapRef.current.getSource('route-return')) {
             mapRef.current.removeLayer('route-return');
             mapRef.current.removeSource('route-return');
@@ -307,15 +374,14 @@ export default function Home() {
     updatePrice();
   }, [outDistanceMiles, retDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet, hasReturnTrip]);
 
-  // Visibility Logic for Bottom Bar & Return Button
+  // Visibility Logic
   useEffect(() => {
     checkVisibility();
   }, [routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff, routeWaypointsRet.current.pickup, routeWaypointsRet.current.dropoff, hasReturnTrip, date, time, flightNumber]);
 
-  // GSAP Animations - DESKTOP ONLY
+  // GSAP Animations
   useEffect(() => {
     const mm = gsap.matchMedia();
-    
     mm.add("(min-width: 768px)", () => {
         const fadeElements = [bookingFormRef.current, offersSectionRef.current, feedbackSectionRef.current, chooseJourneyRef.current];
         fadeElements.forEach(el => {
@@ -332,11 +398,10 @@ export default function Home() {
           }
         });
     });
-
     return () => mm.revert();
   }, []);
 
-  // --- Logic Functions ---
+  // --- Functions ---
 
   const initReviews = () => {
     if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
@@ -359,17 +424,9 @@ export default function Home() {
     }
   };
 
-  const collapseSheet = () => {
-    setSheetExpanded(false);
-  };
+  const collapseSheet = () => { setSheetExpanded(false); };
 
-  const closeSheet = () => {
-    setSheetOverlayOpen(false);
-  };
-
-  const selectVehicle = (index: number) => {
-    setSelectedVehicleIndex(index);
-  };
+  const selectVehicle = (index: number) => { setSelectedVehicleIndex(index); };
 
   const expandSheetAndCloseOthers = (id: string) => {
     setPickupSuggestions([]); setDropoffSuggestions([]); setStopSuggestions({});
@@ -383,6 +440,12 @@ export default function Home() {
 
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
+    
+    // Add My Current Location if available and it's a pickup field
+    if ((type === 'pickup' || type === 'return-pickup') && userLocation) {
+      list.push({ text: "📍 My Current Location", center: userLocation, name: "Current Location" });
+    }
+
     Object.keys(PRESET_DATA).forEach(category => {
       list.push({ isHeader: true, text: category, center: [0,0] });
       PRESET_DATA[category].forEach((p) => list.push({ text: p.name, center: p.center }));
@@ -397,7 +460,7 @@ export default function Home() {
   };
 
   const handleTyping = (type: string, value: string) => {
-    // Reset coords on typing
+    // Reset coords logic
     if (type === 'pickup') routeWaypointsOut.current.pickup = null;
     if (type === 'dropoff') routeWaypointsOut.current.dropoff = null;
     if (type.startsWith('stop-') && !type.includes('return')) {
@@ -424,7 +487,10 @@ export default function Home() {
     }
    
     debounceTimer.current = setTimeout(() => {
-      fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=poi,address`)
+      // Improved Geocoding API for UK Postcodes
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=postcode,address,poi`;
+      
+      fetch(url)
         .then(r => r.json()).then(data => {
           let list: SuggestionItem[] = [];
           if (data.features?.length) {
@@ -444,15 +510,17 @@ export default function Home() {
     let routeWaypoints: React.MutableRefObject<{ pickup: LngLat | null; dropoff: LngLat | null; stops: (LngLat | null)[]; }>;
     let setSuggestions: any;
 
+    // Remove emoji from name if present
+    const cleanName = name.replace("📍 ", "");
+
     const isReturn = type.includes('return');
     routeWaypoints = isReturn ? routeWaypointsRet : routeWaypointsOut;
 
-    // Determine specific setters
-    if (type === 'pickup') { setPickup(name); setSuggestions = setPickupSuggestions; }
-    else if (type === 'dropoff') { setDropoff(name); setSuggestions = setDropoffSuggestions; }
+    if (type === 'pickup') { setPickup(cleanName); setSuggestions = setPickupSuggestions; }
+    else if (type === 'dropoff') { setDropoff(cleanName); setSuggestions = setDropoffSuggestions; }
     else if (type.startsWith('stop-') && !isReturn) { setSuggestions = (prev:any) => ({...prev, [type]: []}); }
-    else if (type === 'return-pickup') { setReturnPickup(name); setSuggestions = setReturnPickupSuggestions; }
-    else if (type === 'return-dropoff') { setReturnDropoff(name); setSuggestions = setReturnDropoffSuggestions; }
+    else if (type === 'return-pickup') { setReturnPickup(cleanName); setSuggestions = setReturnPickupSuggestions; }
+    else if (type === 'return-dropoff') { setReturnDropoff(cleanName); setSuggestions = setReturnDropoffSuggestions; }
     else if (type.startsWith('stop-return-')) { setSuggestions = (prev:any) => ({...prev, [type]: []}); }
 
     if (type.includes('pickup')) {
@@ -466,10 +534,10 @@ export default function Home() {
       const idx = parseInt(parts[parts.length - 1]) - 1;
       
       if(isReturn) {
-          setReturnStops(prev => prev.map((val, i) => i === idx ? name : val));
+          setReturnStops(prev => prev.map((val, i) => i === idx ? cleanName : val));
           routeWaypoints.current.stops[idx] = coords;
       } else {
-          setStops(prev => prev.map((val, i) => i === idx ? name : val));
+          setStops(prev => prev.map((val, i) => i === idx ? cleanName : val));
           routeWaypoints.current.stops[idx] = coords;
       }
       setSuggestions([]);
@@ -486,7 +554,6 @@ export default function Home() {
     const bounds = new window.mapboxgl.LngLatBounds();
     let hasPoints = false;
 
-    // Collect all points
     const addPoint = (p: LngLat | null) => {
         if(p) {
             bounds.extend(p);
@@ -525,12 +592,17 @@ export default function Home() {
       const wpOut = routeWaypointsOut.current;
       const wpRet = routeWaypointsRet.current;
 
-      if(wpOut.pickup) addMarker(wpOut.pickup, '#D4AF37'); // Gold
-      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444'); // Red
+      // Ensure Pulse Marker stays
+      if (userLocation && pulseMarkerRef.current) {
+        // Pulse marker is managed separately, don't remove it
+      }
+
+      if(wpOut.pickup) addMarker(wpOut.pickup, '#D4AF37'); 
+      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444');
       wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
 
       if (hasReturnTrip) {
-          if(wpRet.pickup) addMarker(wpRet.pickup, '#60a5fa'); // Light Blue
+          if(wpRet.pickup) addMarker(wpRet.pickup, '#60a5fa');
           if(wpRet.dropoff) addMarker(wpRet.dropoff, '#ef4444');
           wpRet.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
       }
@@ -599,7 +671,6 @@ export default function Home() {
     });
   };
 
-  // Stops Logic
   const addStop = (isReturn = false) => {
     if (isReturn) {
         if (returnStops.length >= MAX_STOPS) return;
@@ -645,14 +716,14 @@ export default function Home() {
       retP = retDistanceMiles * vehicles[selectedVehicleIndex].perMile;
       if (retP < 5) retP = 5;
       if (returnMeetGreet) retP += 5;
-      retP *= 0.95; // 5% discount logic strictly preserved
+      retP *= 0.95; 
     }
     
     let p = outP + retP;
     if (p >= 130) {
       setOldPriceVisible(true);
       setOldPrice(p);
-      p = p * 0.85; // 15% discount over £130 logic preserved
+      p = p * 0.85;
       setPromoText("15% DISCOUNT APPLIED");
       setPromoClass('text-green-400');
     } else {
@@ -685,17 +756,6 @@ export default function Home() {
       routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
       routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
       calculateRouteReturn();
-    }
-  };
-
-  const getUserLocation = () => {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-            selectLocation('pickup', 'Current Location', [pos.coords.longitude, pos.coords.latitude]);
-            setSheetOverlayOpen(false);
-        });
-    } else {
-        alert('Geolocation is not supported by your browser.');
     }
   };
 
@@ -742,7 +802,6 @@ export default function Home() {
     routeWaypointsRet.current.pickup = routeWaypointsOut.current.dropoff;
     routeWaypointsRet.current.dropoff = routeWaypointsOut.current.pickup;
     
-    // Trigger map update
     if (routeWaypointsRet.current.pickup && routeWaypointsRet.current.dropoff) {
         calculateRouteReturn();
     }
@@ -750,7 +809,14 @@ export default function Home() {
 
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden selection:bg-brand-gold selection:text-black">
-     
+      
+      {/* TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-black/80 border border-brand-gold/30 text-white px-6 py-3 rounded-full backdrop-blur-md shadow-lg animate-fade-in-up">
+          <span className="text-sm font-bold tracking-wide text-brand-gold">{toastMessage}</span>
+        </div>
+      )}
+
       {/* HEADER */}
       <header id="site-header" className={`fixed z-50 transition-all duration-500 ease-in-out ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="glow-wrapper mx-auto">
@@ -1183,7 +1249,7 @@ export default function Home() {
                   </span>
               </div>
 
-              {/* CHOOSE YOUR JOURNEY SECTION - Moved Here */}
+              {/* CHOOSE YOUR JOURNEY SECTION */}
               <div ref={chooseJourneyRef} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
                   {[
                       { title: "Airport Transfer", desc: "Reliable connections to all major UK airports.", Icon: Icons.Plane, link: "https://airporttaxis24-7.com/" },
@@ -1228,7 +1294,6 @@ export default function Home() {
                 <div className="h-[2px] w-12 md:w-16 bg-primary-black/40 rounded-full"></div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 px-2">
-                {/* RATES CARDS - Keeping original content/links */}
                 {[
                     { name: 'Heathrow Airport', price: '99', link: 'https://southampton.airporttaxis24-7.com/heathrow-airport/?pickup=Southampton&dropoff=Heathrow%20Airport' },
                     { name: 'Gatwick Airport', price: '130', link: 'https://southampton.airporttaxis24-7.com/gatwick-airport/?pickup=Southampton&dropoff=Gatwick%20Airport' },
@@ -1348,17 +1413,22 @@ export default function Home() {
         </div>
       </div>
 
-      {/* LOCATION SHEET */}
-      <div id="sheet-overlay" className={`fixed inset-0 bg-black/90 z-[90] flex items-end sm:items-center justify-center transition-opacity duration-300 backdrop-blur-sm ${sheetOverlayOpen ? '' : 'hidden'}`}>
-        <div id="location-sheet" className="bg-[#121212] w-full max-w-md p-6 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 shadow-2xl pb-10">
-          <div className="w-12 h-12 bg-brand-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-gold border border-brand-gold/20">
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/></svg>
-          </div>
-          <h2 className="text-2xl font-black text-white text-center mb-2 font-heading">Where to?</h2>
-          <button onClick={getUserLocation} className="w-full bg-brand-gold text-black font-bold py-3.5 rounded-xl mb-3 mt-6 shadow-lg">Use My Current Location</button>
-          <button onClick={closeSheet} className="w-full bg-white/5 text-gray-400 font-semibold py-3.5 rounded-xl border border-white/5">Enter Address Manually</button>
+      {/* CONSENT BANNER (Replaces Modal for Denied/Pending State) */}
+      {showConsentBanner && (
+        <div className="fixed bottom-0 left-0 w-full z-[100] p-4 animate-fade-in-up">
+            <div className="mx-auto max-w-lg glass-card rounded-2xl p-4 border border-brand-gold/30 shadow-2xl bg-black/80 flex items-center justify-between gap-4">
+                <p className="text-[10px] text-gray-300 leading-tight">
+                    Please allow location access and browser cookies for the best experience. By using this website, you agree to our use of cookies.
+                </p>
+                <button 
+                    onClick={handleConsentAllow}
+                    className="bg-brand-gold text-black text-[10px] font-bold px-4 py-2 rounded-lg hover:bg-white transition-colors uppercase tracking-wider flex-shrink-0"
+                >
+                    Allow
+                </button>
+            </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
