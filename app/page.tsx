@@ -107,7 +107,7 @@ export default function Home() {
   const [servicesOpen, setServicesOpen] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
-  const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
+  const [selectedVehicleIndex, setSelectedVehicleIndex] = useState<number | null>(null);
   const [discountMsgIndex, setDiscountMsgIndex] = useState(0);
   const [accordionOpen, setAccordionOpen] = useState<number | null>(0);
   
@@ -118,6 +118,8 @@ export default function Home() {
 
   // Business Logic State
   const [outDistanceMiles, setOutDistanceMiles] = useState(0);
+  const [outDurationSeconds, setOutDurationSeconds] = useState(0); // For time estimate
+  const [outDurationText, setOutDurationText] = useState('');
   const [retDistanceMiles, setRetDistanceMiles] = useState(0);
   const [totalPrice, setTotalPrice] = useState(0);
   const [oldPriceVisible, setOldPriceVisible] = useState(false);
@@ -206,19 +208,18 @@ export default function Home() {
       const wpOut = routeWaypointsOut.current;
       const wpRet = routeWaypointsRet.current;
       
-      // Strict Golden Pin Logic:
-      // - If ANY pickup location is selected (wpOut.pickup exists), the Golden Pin MUST be hidden.
-      // - If NO pickup is selected AND we have a user location, the Golden Pin MUST be shown.
       const isPickupSet = !!wpOut.pickup;
 
+      // Handle Golden Pin (Current Location)
       if (isPickupSet) {
-          // Hide Golden Pin
+          // If pickup is set, hide Golden Pin. 
+          // Note: If pickup == userLocation, we will place a Green Pin there below, effectively "turning it green".
           if (pulseMarkerRef.current) {
               pulseMarkerRef.current.remove();
               pulseMarkerRef.current = null;
           }
       } else {
-          // Show Golden Pin if user location available
+          // Show Golden Pin if user location available and no pickup set
           if (userLocation) {
               if (!pulseMarkerRef.current) {
                   const el = document.createElement('div');
@@ -236,9 +237,9 @@ export default function Home() {
       }
 
       // Add Journey Markers
-      if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); // Green
-      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444'); // Red
-      wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') }); // Blue
+      if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); // Green Pin for Pickup
+      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444'); // Red Pin for Dropoff
+      wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') }); // Blue Pin for Stops
 
       if (hasReturnTrip) {
           if(wpRet.pickup) addMarker(wpRet.pickup, '#3b82f6');
@@ -257,7 +258,7 @@ export default function Home() {
       mapRef.current.flyTo({ center: coords, zoom: 14, essential: true });
     }
     
-    // Trigger marker refresh to show golden pin if appropriate
+    // Trigger marker refresh to show golden pin
     if (mapRef.current) refreshMarkers();
   };
 
@@ -287,6 +288,28 @@ export default function Home() {
     triggerLocationCheck();
   };
 
+  const formatDuration = (seconds: number) => {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+  };
+
+  const calculateMinReturnTime = () => {
+      if (!date || !time || !returnDate || date !== returnDate) return '';
+      if (outDurationSeconds === 0) return time; // Fallback
+
+      const [h, m] = time.split(':').map(Number);
+      const outDate = new Date();
+      outDate.setHours(h, m, 0, 0);
+      // Add duration to outbound time
+      outDate.setSeconds(outDate.getSeconds() + outDurationSeconds);
+      
+      // Format back to HH:MM
+      const retH = outDate.getHours().toString().padStart(2, '0');
+      const retM = outDate.getMinutes().toString().padStart(2, '0');
+      return `${retH}:${retM}`;
+  };
+
   // --- Initialization & Effects ---
 
   useEffect(() => {
@@ -309,6 +332,9 @@ export default function Home() {
     // Client-side date init
     const now = new Date();
     setDate(now.toISOString().split('T')[0]);
+    // Round to next 30 min
+    now.setMinutes(now.getMinutes() + 30);
+    now.setMinutes(Math.ceil(now.getMinutes() / 30) * 30);
     setTime(now.toTimeString().substring(0, 5));
 
     const handleScroll = () => {
@@ -350,7 +376,7 @@ export default function Home() {
         mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
         
         mapRef.current.on('load', () => {
-            mapRef.current.resize(); // Fix for mobile rendering
+            mapRef.current.resize();
             const locCookie = document.cookie.split('; ').find(row => row.startsWith('fare1_user_loc='));
             if (locCookie) {
                 try {
@@ -358,7 +384,7 @@ export default function Home() {
                     setUserLocation(savedLoc);
                     if (!routeWaypointsOut.current.pickup) {
                         mapRef.current.setCenter(savedLoc);
-                        refreshMarkers(); // Ensure golden pin appears
+                        refreshMarkers();
                     }
                 } catch(e) {}
             }
@@ -400,11 +426,18 @@ export default function Home() {
     }
   }, [hasReturnTrip]);
 
+  // Vehicle Filtering Logic - Auto Deselect if Invalid
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
-    if (filtered.length > 0 && !filtered.some((v, i) => i === selectedVehicleIndex)) {
-      setSelectedVehicleIndex(0);
+    
+    // If currently selected vehicle is no longer available, deselect it
+    if (selectedVehicleIndex !== null) {
+        const currentVehicle = vehicles[selectedVehicleIndex];
+        const isStillValid = filtered.some(v => v.name === currentVehicle.name);
+        if (!isStillValid) {
+            setSelectedVehicleIndex(null);
+        }
     }
   }, [pax, bags]);
 
@@ -412,24 +445,21 @@ export default function Home() {
     updatePrice();
   }, [outDistanceMiles, retDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet, hasReturnTrip]);
 
-  // Updated Visibility Logic with comprehensive dependencies
+  // Updated Visibility Logic
   useEffect(() => {
     checkVisibility();
   }, [
       pickup, dropoff, returnPickup, returnDropoff,
-      hasReturnTrip, date, time, flightNumber, 
-      // Force check on routing changes
+      hasReturnTrip, date, time, flightNumber, selectedVehicleIndex,
       routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff
   ]);
 
-  // Ensure map resizes correctly on window resize (fixes mobile address bar issues)
   useEffect(() => {
       const handleResize = () => mapRef.current?.resize();
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Update map markers whenever userLocation changes (to show/hide golden pin)
   useEffect(() => {
       if (mapRef.current) refreshMarkers();
   }, [userLocation]);
@@ -480,7 +510,12 @@ export default function Home() {
 
   const collapseSheet = () => { setSheetExpanded(false); };
 
-  const selectVehicle = (index: number) => { setSelectedVehicleIndex(index); };
+  // Note: We need to find the original index in the 'vehicles' array because filteredVehicles is a subset
+  const selectVehicle = (filteredIndex: number) => { 
+      const vehicle = filteredVehicles[filteredIndex];
+      const originalIndex = vehicles.findIndex(v => v.name === vehicle.name);
+      setSelectedVehicleIndex(originalIndex); 
+  };
 
   const expandSheetAndCloseOthers = (id: string) => {
     setPickupSuggestions([]); setDropoffSuggestions([]); setStopSuggestions({});
@@ -526,10 +561,7 @@ export default function Home() {
         routeWaypointsRet.current.stops[idx] = null;
     }
 
-    // Refresh markers immediately on clear to potentially show golden pin
-    if (type === 'pickup' && !value) {
-        refreshMarkers();
-    }
+    if (type === 'pickup' && !value) refreshMarkers();
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
@@ -638,7 +670,6 @@ export default function Home() {
   };
 
   const calculateRouteOut = () => {
-    // If we only have a pickup, just refresh markers to show the Green pin instead of Golden
     if (routeWaypointsOut.current.pickup && !routeWaypointsOut.current.dropoff) {
         refreshMarkers();
         if (mapRef.current) mapRef.current.flyTo({ center: routeWaypointsOut.current.pickup, zoom: 14 });
@@ -659,6 +690,8 @@ export default function Home() {
       const r = data.routes[0];
       const distMiles = r.distance / 1609.34;
       setOutDistanceMiles(distMiles);
+      setOutDurationSeconds(r.duration);
+      setOutDurationText(formatDuration(r.duration));
       setDistanceDisplay((distMiles + retDistanceMiles).toFixed(1) + ' mi');
       setDistanceHidden(false);
       
@@ -746,14 +779,16 @@ export default function Home() {
   };
 
   const updatePrice = () => {
-    if (outDistanceMiles <= 0) return;
-    let outP = outDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+    if (outDistanceMiles <= 0 || selectedVehicleIndex === null) return;
+    
+    const vehicle = vehicles[selectedVehicleIndex];
+    let outP = outDistanceMiles * vehicle.perMile;
     if (outP < 5) outP = 5;
     if (meetGreet) outP += 5;
     
     let retP = 0;
     if (hasReturnTrip && retDistanceMiles > 0) {
-      retP = retDistanceMiles * vehicles[selectedVehicleIndex].perMile;
+      retP = retDistanceMiles * vehicle.perMile;
       if (retP < 5) retP = 5;
       if (returnMeetGreet) retP += 5;
       retP *= 0.95; 
@@ -777,10 +812,10 @@ export default function Home() {
   const checkVisibility = () => {
     const p = routeWaypointsOut.current.pickup;
     const d = routeWaypointsOut.current.dropoff;
-    const basicFieldsFilled = !!p && !!d && !!date && !!time && !!flightNumber;
+    const basicFieldsFilled = !!p && !!d && !!date && !!time;
     
     setShowReturnButton(basicFieldsFilled);
-    setBottomBarVisible(basicFieldsFilled && (!hasReturnTrip || (!!routeWaypointsRet.current.pickup && !!routeWaypointsRet.current.dropoff)));
+    setBottomBarVisible(basicFieldsFilled && selectedVehicleIndex !== null && (!hasReturnTrip || (!!routeWaypointsRet.current.pickup && !!routeWaypointsRet.current.dropoff)));
   };
 
   const swapLocations = () => {
@@ -808,20 +843,8 @@ export default function Home() {
     s.addEventListener('mousemove', e => { if (!isDown) return; e.preventDefault(); s.scrollLeft = scrollLeft - (e.pageX - s.offsetLeft - startX) * 2; });
   };
 
-  const throttle = (func: Function, limit: number) => {
-    let inThrottle = false;
-    return function (this: any) {
-      const args = arguments;
-      const context = this;
-      if (!inThrottle) {
-        func.apply(context, args);
-        inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
-      }
-    }
-  };
-
   const goToBooking = () => {
+    if (selectedVehicleIndex === null) return;
     let url = `https://booking.fare1.co.uk?pickup=${encodeURIComponent(pickup)}&dropoff=${encodeURIComponent(dropoff)}&vehicle=${encodeURIComponent(vehicles[selectedVehicleIndex].name)}&price=${totalPrice.toFixed(2)}&date=${date}&time=${time}&flight=${flightNumber}&meet=${meetGreet}&pax=${pax}&bags=${bags}`;
     stops.forEach((stop, i) => {
       if (routeWaypointsOut.current.stops[i]) url += `&stop${i + 1}=${encodeURIComponent(stop)}`;
@@ -846,6 +869,15 @@ export default function Home() {
         calculateRouteReturn();
     }
   };
+
+  // Flow State Derivations
+  const isRouteCalculated = outDistanceMiles > 0 && !!pickup && !!dropoff;
+  const isDateTimeFilled = isRouteCalculated && !!date && !!time;
+  // Note: Pax and Bags have defaults (1, 0), so we consider them filled when displayed.
+  // The 'Details' section contains Flight No, MeetGreet, Return Option, Pax, Luggage
+  // It should show after Date & Time.
+  // Vehicle Selection shows after Pax/Luggage (which are part of Details).
+  // Essentially, everything cascades down.
 
   return (
     <div className="bg-primary-black text-gray-200 font-sans min-h-screen flex flex-col overflow-hidden selection:bg-brand-gold selection:text-black">
@@ -938,10 +970,10 @@ export default function Home() {
       <div className="fixed inset-0 h-[45vh] z-0">
         <div ref={mapContainerRef} className="w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-primary-black pointer-events-none"></div>
-        {/* Refresh Button */}
+        {/* Refresh Button - Moved Up */}
         <button 
             onClick={() => triggerLocationCheck(true)}
-            className="absolute bottom-6 right-6 pointer-events-auto bg-black/80 backdrop-blur-md p-3 rounded-full border border-brand-gold/30 hover:bg-brand-gold hover:text-black hover:border-brand-gold transition-all duration-300 shadow-xl group z-20"
+            className="absolute bottom-32 right-6 pointer-events-auto bg-black/80 backdrop-blur-md p-3 rounded-full border border-brand-gold/30 hover:bg-brand-gold hover:text-black hover:border-brand-gold transition-all duration-300 shadow-xl group z-20"
             title="Refresh Location"
         >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-gold group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1059,58 +1091,73 @@ export default function Home() {
             </div>
           </div>
           
-          <div className="h-[1px] w-full bg-white/5"></div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Date</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
-                </div>
+          {/* STEP 2: SUMMARY & DATE/TIME */}
+          {isRouteCalculated && (
+            <div className="animate-fade-in">
+              <div className="text-[10px] text-gray-400 font-medium mb-3 pl-2 flex items-center gap-2">
+                <span className="truncate max-w-[200px]">{pickup.split(',')[0]}</span>
+                <span className="text-brand-gold">→</span>
+                <span className="truncate max-w-[200px]">{dropoff.split(',')[0]}</span>
+                <span className="text-gray-600">|</span>
+                <span>{distanceDisplay}</span>
+                <span className="text-gray-600">|</span>
+                <span>Est: {outDurationText}</span>
               </div>
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Time</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                  <input type="time" value={time} onChange={e => setTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Flight No.</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                  <input type="text" placeholder="e.g. EZY410" value={flightNumber} onChange={e => setFlightNumber(e.target.value)} className="uppercase text-sm placeholder-gray-600 bg-transparent border-none outline-none text-white w-full" />
-                </div>
-              </div>
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Meet & Greet</label>
-                <label className="checkbox-wrapper unified-input rounded-xl h-[50px] px-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition">
-                  <span className="text-xs font-bold text-brand-gold">£5.00</span>
-                  <input type="checkbox" checked={meetGreet} onChange={() => setMeetGreet(!meetGreet)} className="hidden" />
-                  <div className={`w-4 h-4 border border-gray-600 rounded flex items-center justify-center transition-all ${meetGreet ? 'bg-brand-gold border-brand-gold' : ''}`}>
-                    <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+              
+              <div className="h-[1px] w-full bg-white/5 mb-4"></div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Date</label>
+                  <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
                   </div>
-                </label>
+                </div>
+                <div>
+                  <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Time</label>
+                  <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                    <input type="time" value={time} onChange={e => setTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* RETURN TRIP LOGIC */}
-            <div className="sm:col-span-2">
-              {!hasReturnTrip ? (
-                showReturnButton && (
-                    <button onClick={addReturnTrip} className="w-full py-3.5 bg-gradient-to-r from-secondary-black to-black border border-brand-gold/40 text-brand-gold font-bold rounded-xl hover:shadow-[0_0_15px_rgba(212,175,55,0.2)] transition-all duration-300 flex items-center justify-center uppercase tracking-widest text-xs">
-                      Add Return Trip +
-                    </button>
-                )
-              ) : (
-                <div className="space-y-4 border-t border-brand-gold/20 pt-6 mt-2 relative bg-white/5 p-4 rounded-xl">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-brand-gold uppercase tracking-widest">Return Trip Details</h3>
-                    <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded border border-green-500/30">5% Discount Applied</span>
+          {/* STEP 3: DETAILS (Flight, Pax, Return, Luggage) */}
+          {isDateTimeFilled && (
+            <div className="animate-fade-in space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] text-brand-gold uppercase ml-1 mb-1 font-bold tracking-widest">Flight No.</label>
+                  <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
+                    <input type="text" placeholder="e.g. EZY410" value={flightNumber} onChange={e => setFlightNumber(e.target.value)} className="uppercase text-sm placeholder-gray-600 bg-transparent border-none outline-none text-white w-full" />
                   </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                </div>
+                <div>
+                  <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Meet & Greet</label>
+                  <label className="checkbox-wrapper unified-input rounded-xl h-[50px] px-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition">
+                    <span className="text-xs font-bold text-brand-gold">£5.00</span>
+                    <input type="checkbox" checked={meetGreet} onChange={() => setMeetGreet(!meetGreet)} className="hidden" />
+                    <div className={`w-4 h-4 border border-gray-600 rounded flex items-center justify-center transition-all ${meetGreet ? 'bg-brand-gold border-brand-gold' : ''}`}>
+                      <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* RETURN TRIP LOGIC */}
+              <div className="">
+                {!hasReturnTrip ? (
+                  <button onClick={addReturnTrip} className="w-full py-3.5 bg-gradient-to-r from-secondary-black to-black border border-brand-gold/40 text-brand-gold font-bold rounded-xl hover:shadow-[0_0_15px_rgba(212,175,55,0.2)] transition-all duration-300 flex items-center justify-center uppercase tracking-widest text-xs">
+                    Add Return Trip +
+                  </button>
+                ) : (
+                  <div className="space-y-4 border-t border-brand-gold/20 pt-6 relative bg-white/5 p-4 rounded-xl">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-brand-gold uppercase tracking-widest">Return Trip Details</h3>
+                      <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded border border-green-500/30">5% Discount Applied</span>
+                    </div>
+                    
                     <div className="location-field-wrapper group">
                       <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
                         <div className="mr-3 flex-shrink-0 text-brand-gold">
@@ -1138,39 +1185,38 @@ export default function Home() {
                     </div>
 
                     {/* Return Stops */}
-                    <div className="col-span-1 sm:col-span-2 space-y-3 pl-2">
-                        {returnStops.map((stop, index) => {
-                            const type = `stop-return-${index + 1}`;
-                            return (
-                            <div key={index} className="location-field-wrapper group animate-fade-in pl-5">
-                                <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
-                                <div className="mr-3 text-blue-400 flex-shrink-0">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" /></svg>
-                                </div>
-                                <input type="text" placeholder={`Return Stop ${index + 1}`}
-                                        onFocus={() => expandSheetAndCloseOthers(type)}
-                                        onChange={(e) => handleStopChange(index, e.target.value, true)}
-                                        value={stop}
-                                        className="text-[15px] font-medium placeholder-gray-500 bg-transparent w-full h-full outline-none text-white"/>
-                                <button className="ml-2 text-gray-600 hover:text-red-500" onClick={() => removeStop(index, true)}>✕</button>
-                                </div>
-                                <ul className="suggestions-list" style={{display: returnStopSuggestions[type]?.length > 0 ? 'block' : 'none'}}>
-                                {returnStopSuggestions[type]?.map((item, i) => (
-                                    item.isHeader ?
-                                    <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
-                                    <li key={i} onClick={() => selectLocation(type, item.text, item.center)}>{item.text}</li>
-                                ))}
-                                </ul>
-                            </div>
-                            );
-                        })}
-                        <div className="flex justify-end" style={{display: returnStops.length >= MAX_STOPS ? 'none' : 'flex'}}>
-                            <button onClick={() => addStop(true)} className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-brand-gold transition py-1 px-2 border border-white/10 rounded">
-                                + Add Return Stop
-                            </button>
-                        </div>
+                    <div className="pl-2 space-y-3">
+                      {returnStops.map((stop, index) => {
+                          const type = `stop-return-${index + 1}`;
+                          return (
+                          <div key={index} className="location-field-wrapper group animate-fade-in pl-5">
+                              <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
+                              <div className="mr-3 text-blue-400 flex-shrink-0">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" /></svg>
+                              </div>
+                              <input type="text" placeholder={`Return Stop ${index + 1}`}
+                                      onFocus={() => expandSheetAndCloseOthers(type)}
+                                      onChange={(e) => handleStopChange(index, e.target.value, true)}
+                                      value={stop}
+                                      className="text-[15px] font-medium placeholder-gray-500 bg-transparent w-full h-full outline-none text-white"/>
+                              <button className="ml-2 text-gray-600 hover:text-red-500" onClick={() => removeStop(index, true)}>✕</button>
+                              </div>
+                              <ul className="suggestions-list" style={{display: returnStopSuggestions[type]?.length > 0 ? 'block' : 'none'}}>
+                              {returnStopSuggestions[type]?.map((item, i) => (
+                                  item.isHeader ?
+                                  <div key={i} className="text-[10px] text-brand-gold uppercase px-4 py-2 bg-[#111] font-bold">{item.text}</div> :
+                                  <li key={i} onClick={() => selectLocation(type, item.text, item.center)}>{item.text}</li>
+                              ))}
+                              </ul>
+                          </div>
+                          );
+                      })}
+                      <div className="flex justify-end" style={{display: returnStops.length >= MAX_STOPS ? 'none' : 'flex'}}>
+                          <button onClick={() => addStop(true)} className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-brand-gold transition py-1 px-2 border border-white/10 rounded">
+                              + Add Return Stop
+                          </button>
+                      </div>
                     </div>
-
 
                     <div className="location-field-wrapper group">
                       <div className="unified-input rounded-xl flex items-center h-[54px] px-4 relative z-10 bg-black">
@@ -1207,7 +1253,13 @@ export default function Home() {
                       <div>
                         <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Return Time</label>
                         <div className="unified-input rounded-xl h-[50px] px-3 flex items-center">
-                          <input type="time" value={returnTime} onChange={e => setReturnTime(e.target.value)} className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" />
+                          <input 
+                            type="time" 
+                            min={calculateMinReturnTime()}
+                            value={returnTime} 
+                            onChange={e => setReturnTime(e.target.value)} 
+                            className="uppercase text-sm cursor-pointer bg-transparent border-none outline-none text-white w-full" 
+                          />
                         </div>
                       </div>
                     </div>
@@ -1229,50 +1281,56 @@ export default function Home() {
                         </label>
                       </div>
                     </div>
+                    <button onClick={() => setHasReturnTrip(false)} className="w-full py-2 bg-red-500/10 text-red-400 font-bold rounded-lg hover:bg-red-500/20 transition text-xs uppercase tracking-wider mt-4">
+                      Remove Return Trip
+                    </button>
                   </div>
-                  <button onClick={() => setHasReturnTrip(false)} className="w-full py-2 bg-red-500/10 text-red-400 font-bold rounded-lg hover:bg-red-500/20 transition text-xs uppercase tracking-wider">
-                    Remove Return Trip
-                  </button>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:col-span-2">
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                  <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
-                  </select>
-                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Passengers</label>
+                  <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                    <select value={pax} onChange={e => setPax(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                      {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} {i+1 === 1 ? 'Person' : 'People'}</option>)}
+                    </select>
+                    <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
-                <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
-                  <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
-                    <option value="0" className="bg-black">No Luggage</option>
-                    {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
-                    <option value="9" className="bg-black">8+ Bags</option>
-                  </select>
-                  <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+                <div>
+                  <label className="text-[9px] text-gray-500 uppercase ml-1 mb-1 font-bold tracking-widest">Luggage</label>
+                  <div className="unified-input rounded-xl h-[50px] px-3 flex items-center relative">
+                    <select value={bags} onChange={e => setBags(parseInt(e.target.value))} className="text-sm cursor-pointer appearance-none bg-transparent w-full text-white">
+                      <option value="0" className="bg-black">No Luggage</option>
+                      {[...Array(8)].map((_, i) => <option key={i+1} value={i+1} className="bg-black">{i+1} Bag{i+1 > 1 ? 's' : ''}</option>)}
+                      <option value="9" className="bg-black">8+ Bags</option>
+                    </select>
+                    <div className="absolute right-3 pointer-events-none text-brand-gold text-[10px]">▼</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div>
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
-            <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
-              {filteredVehicles.map((v, i) => (
-                <div key={i} onClick={() => selectVehicle(i)} className={`vehicle-card min-w-[130px] w-[130px] p-3 rounded-2xl cursor-pointer snap-center flex flex-col justify-between ${selectedVehicleIndex === i ? 'selected' : ''}`}>
-                  <div className="selected-badge absolute top-2 right-2 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase" style={{opacity: selectedVehicleIndex === i ? 1 : 0}}>Selected</div>
-                  <div><h4 className="text-white font-bold text-xs mb-0.5">{v.name}</h4><p className="text-[9px] text-gray-400">{v.description}</p></div>
-                  <div className="flex-1 flex items-center justify-center py-2"><img src={v.image} className="w-full object-contain" /></div>
-                  <div className="flex justify-between items-end border-t border-white/10 pt-1.5"><div className="flex gap-1.5 text-gray-400 text-[10px]"><span>👤{v.passengers}</span><span>🧳{v.luggage}</span></div><span className="text-brand-gold font-bold text-[10px]">£{v.perMile}/mi</span></div>
-                </div>
-              ))}
+          )}
+
+          {/* STEP 4: VEHICLES */}
+          {isDateTimeFilled && (
+            <div className="animate-fade-in">
+              <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest mt-2">Select Class</h3>
+              <div ref={vehicleContainerRef} className="vehicle-scroll flex overflow-x-auto gap-3 snap-x pb-4 px-1">
+                {filteredVehicles.length > 0 ? filteredVehicles.map((v, i) => (
+                  <div key={i} onClick={() => selectVehicle(i)} className={`vehicle-card min-w-[130px] w-[130px] p-3 rounded-2xl cursor-pointer snap-center flex flex-col justify-between ${selectedVehicleIndex !== null && vehicles[selectedVehicleIndex].name === v.name ? 'selected' : ''}`}>
+                    <div className="selected-badge absolute top-2 right-2 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase" style={{opacity: selectedVehicleIndex !== null && vehicles[selectedVehicleIndex].name === v.name ? 1 : 0}}>Selected</div>
+                    <div><h4 className="text-white font-bold text-xs mb-0.5">{v.name}</h4><p className="text-[9px] text-gray-400">{v.description}</p></div>
+                    <div className="flex-1 flex items-center justify-center py-2"><img src={v.image} className="w-full object-contain" /></div>
+                    <div className="flex justify-between items-end border-t border-white/10 pt-1.5"><div className="flex gap-1.5 text-gray-400 text-[10px]"><span>👤{v.passengers}</span><span>🧳{v.luggage}</span></div><span className="text-brand-gold font-bold text-[10px]">£{v.perMile}/mi</span></div>
+                  </div>
+                )) : (
+                  <div className="text-gray-500 text-xs p-4">No vehicles available for this configuration.</div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* OFFERS SECTION */}
