@@ -107,7 +107,6 @@ export default function Home() {
   const [servicesOpen, setServicesOpen] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
-  const [bottomBarHiddenScroll, setBottomBarHiddenScroll] = useState(false);
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
   const [discountMsgIndex, setDiscountMsgIndex] = useState(0);
   const [accordionOpen, setAccordionOpen] = useState<number | null>(0);
@@ -166,7 +165,7 @@ export default function Home() {
   // Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const pulseMarkerRef = useRef<HTMLDivElement | null>(null);
+  const pulseMarkerRef = useRef<any>(null); // Storing Mapbox Marker instance
   
   const mainSheetRef = useRef<HTMLDivElement>(null);
   const vehicleContainerRef = useRef<HTMLDivElement>(null);
@@ -182,7 +181,6 @@ export default function Home() {
   const routeWaypointsOut = useRef<RouteWaypoints>({ pickup: null, dropoff: null, stops: [] });
   const routeWaypointsRet = useRef<RouteWaypoints>({ pickup: null, dropoff: null, stops: [] });
   
-  const lastScrollTop = useRef(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Logic Helpers ---
@@ -192,12 +190,7 @@ export default function Home() {
     const d = new Date();
     d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
     const expires = "expires=" + d.toUTCString();
-    
-    // Cross-subdomain strategy:
-    // This allows cookies to be shared with booking.fare1.co.uk and other subdomains
-    // Note: This requires the app to be running on fare1.co.uk or a subdomain of it.
-    // If running on localhost, the domain attribute might prevent the cookie from being set, 
-    // so we conditionally add it.
+    // Wildcard domain for cross-subdomain support
     const domain = window.location.hostname.includes('fare1.co.uk') ? ";domain=.fare1.co.uk" : "";
     document.cookie = `${name}=${value};${expires};path=/${domain};SameSite=Lax`;
   };
@@ -210,29 +203,16 @@ export default function Home() {
   const updatePulseMarker = (coords: LngLat) => {
       if (!mapRef.current || !window.mapboxgl) return;
       
-      if (!pulseMarkerRef.current) {
-          const el = document.createElement('div');
-          el.className = 'marker-pulse';
-          pulseMarkerRef.current = el;
-          new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
+      // Update existing marker instance for smoother mobile performance
+      if (pulseMarkerRef.current) {
+          pulseMarkerRef.current.setLngLat(coords);
       } else {
-          // Update position if it exists (though Mapbox markers are objects, we re-instantiate lightly or track the marker obj if needed)
-          // Since we store the DOM element, we need the Mapbox Marker instance. 
-          // For simplicity in this refactor, we remove the old DOM element logic 
-          // and treat the marker as a visual overlay managed by Mapbox.
-          // Correct approach: Find marker associated with element or simpler, just create new if logic permits.
-          // Here, we'll remove the old marker element visually if we could, 
-          // but better to just create it once. If coords change, we'd need the marker instance.
-          // Since we are not storing the pulse marker instance in a ref (only the DIV), 
-          // let's clear existing pulse markers by class before adding new.
-          const existing = document.getElementsByClassName('marker-pulse');
-          while(existing.length > 0){
-              existing[0].remove();
-          }
           const el = document.createElement('div');
           el.className = 'marker-pulse';
-          pulseMarkerRef.current = el;
-          new window.mapboxgl.Marker(el).setLngLat(coords).addTo(mapRef.current);
+          // Store the Mapbox marker instance, not the DOM element
+          pulseMarkerRef.current = new window.mapboxgl.Marker(el)
+            .setLngLat(coords)
+            .addTo(mapRef.current);
       }
   };
 
@@ -240,15 +220,10 @@ export default function Home() {
     const coords: LngLat = [pos.coords.longitude, pos.coords.latitude];
     setUserLocation(coords);
     
-    // Save to cookie (Cross-subdomain)
     setCookie('fare1_user_loc', JSON.stringify(coords), 7);
     
-    // Auto-consent if we got location successfully implies permission granted
-    // setCookie('fare1_consent', 'true', 365); // Optional: implied consent for functionality
-
-    // Center Map
     if (mapRef.current) {
-      mapRef.current.flyTo({ center: coords, zoom: 14 });
+      mapRef.current.flyTo({ center: coords, zoom: 14, essential: true });
       updatePulseMarker(coords);
     }
   };
@@ -262,7 +237,6 @@ export default function Home() {
             if (isManualRefresh) showToast("Location updated!");
         },
         (err) => {
-          // If denied/pending, check for consent cookie
           const hasConsent = document.cookie.split(';').some(c => c.trim().startsWith('fare1_consent='));
           if (!hasConsent && !isManualRefresh) {
               setShowConsentBanner(true);
@@ -270,7 +244,7 @@ export default function Home() {
               showToast("Location access denied. Please enable permissions.");
           }
         },
-        { enableHighAccuracy: true, timeout: 8000 }
+        { enableHighAccuracy: true, timeout: 15000 }
       );
   };
 
@@ -347,7 +321,6 @@ export default function Home() {
         mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
         
         mapRef.current.on('load', () => {
-            // Check if we have a saved location in cookie to init map center immediately
             const locCookie = document.cookie.split('; ').find(row => row.startsWith('fare1_user_loc='));
             if (locCookie) {
                 try {
@@ -365,22 +338,8 @@ export default function Home() {
       }
     }
 
-    // Geolocation Request on Load (Silent & Immediate)
+    // Geolocation Request on Load
     triggerLocationCheck();
-
-    // Sheet Scroll Logic
-    const sheet = mainSheetRef.current;
-    if (sheet) {
-      const handleSheetScroll = throttle(() => {
-        const st = sheet.scrollTop;
-        if (bottomBarVisible) {
-          if (st > lastScrollTop.current && st > 50) setBottomBarHiddenScroll(true);
-          else setBottomBarHiddenScroll(false);
-        }
-        lastScrollTop.current = st <= 0 ? 0 : st;
-      }, 100);
-      sheet.addEventListener('scroll', handleSheetScroll);
-    }
 
     enableDragScroll(vehicleContainerRef.current);
     enableDragScroll(googleReviewsContainerRef.current);
@@ -392,7 +351,6 @@ export default function Home() {
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      if (sheet) sheet.removeEventListener('scroll', () => {});
       lenis.destroy();
       clearInterval(msgInterval);
     };
@@ -429,7 +387,14 @@ export default function Home() {
   // Visibility Logic
   useEffect(() => {
     checkVisibility();
-  }, [routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff, routeWaypointsRet.current.pickup, routeWaypointsRet.current.dropoff, hasReturnTrip, date, time, flightNumber]);
+  }, [
+      // Crucial: Track strings to trigger check when inputs change
+      pickup, dropoff, returnPickup, returnDropoff,
+      // Existing dependencies
+      hasReturnTrip, date, time, flightNumber, 
+      // Ensure Waypoint Refs (though stable) are checked when strings change
+      routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff
+  ]);
 
   // GSAP Animations
   useEffect(() => {
@@ -494,7 +459,6 @@ export default function Home() {
     let list: SuggestionItem[] = [];
     
     // Add My Current Location if available and it's a pickup field
-    // Priority Item
     if ((type === 'pickup' || type === 'return-pickup') && userLocation) {
       list.push({ text: "📍 Use My Current Location", center: userLocation, name: "Current Location" });
     }
@@ -540,8 +504,6 @@ export default function Home() {
     }
    
     debounceTimer.current = setTimeout(() => {
-      // Improved Geocoding API for UK Postcodes
-      // Added country=gb and types=postcode,address,poi to ensure high precision
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?access_token=${MAPBOX_TOKEN}&country=gb&limit=5&types=postcode,address,poi`;
       
       fetch(url)
@@ -564,7 +526,6 @@ export default function Home() {
     let routeWaypoints: React.MutableRefObject<RouteWaypoints>;
     let setSuggestions: any;
 
-    // Remove emoji from name if present
     const cleanName = name.replace("📍 ", "");
 
     const isReturn = type.includes('return');
@@ -577,9 +538,6 @@ export default function Home() {
     else if (type === 'return-dropoff') { setReturnDropoff(cleanName); setSuggestions = setReturnDropoffSuggestions; }
     else if (type.startsWith('stop-return-')) { setSuggestions = (prev:any) => ({...prev, [type]: []}); }
 
-    // Logic to turn Golden Pin to Green if "Use My Current Location" is selected
-    // Note: The coloring happens in refreshMarkers, so we just set coords here.
-    
     if (type.includes('pickup')) {
       routeWaypoints.current.pickup = coords;
       setSuggestions([]);
@@ -629,8 +587,7 @@ export default function Home() {
     }
 
     if (hasPoints) {
-        // Perfect Map Zoom parallelly
-        mapRef.current.fitBounds(bounds, { padding: 80, animate: true });
+        mapRef.current.fitBounds(bounds, { padding: 80, animate: true, essential: true });
     }
   }, [hasReturnTrip]);
 
@@ -649,14 +606,6 @@ export default function Home() {
       clearMarkers();
       const wpOut = routeWaypointsOut.current;
       const wpRet = routeWaypointsRet.current;
-
-      // Pulse Marker for User Location stays managed by `pulseMarkerRef`, we do not remove it here.
-
-      // Map Pins Colors:
-      // Pickup pin: Green (#22c55e)
-      // Destination pin: Red (#ef4444)
-      // Stops pins: Blue (#3b82f6)
-      // For return trip: Pickup pin blue (#3b82f6), destination pin red (#ef4444)
 
       if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); 
       if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444');
@@ -1464,7 +1413,7 @@ export default function Home() {
       </div>
       
       {/* BOTTOM BAR */}
-      <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-3 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''} ${bottomBarHiddenScroll ? 'hidden-scroll' : ''}`}>
+      <div id="bottom-bar" className={`bottom-bar fixed bottom-0 left-0 w-full bg-black/95 border-t border-brand-gold/20 py-3 px-5 z-[80] safe-area-pb shadow-[0_-10px_40px_rgba(0,0,0,1)] ${bottomBarVisible ? 'visible' : ''}`}>
         <div className="flex justify-between items-center max-w-5xl mx-auto gap-4">
           <div className="flex flex-col justify-center min-w-0">
             <div id="promo-text" className={`text-[9px] font-black ${promoClass} mb-0.5 tracking-wider uppercase truncate animate-pulse-custom`}>{promoText}</div>
