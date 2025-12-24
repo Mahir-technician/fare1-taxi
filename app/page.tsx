@@ -185,12 +185,10 @@ export default function Home() {
 
   // --- Logic Helpers ---
 
-  // Cross-Domain Cookie Setter
   const setCookie = (name: string, value: string, days: number) => {
     const d = new Date();
     d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
     const expires = "expires=" + d.toUTCString();
-    // Wildcard domain for cross-subdomain support
     const domain = window.location.hostname.includes('fare1.co.uk') ? ";domain=.fare1.co.uk" : "";
     document.cookie = `${name}=${value};${expires};path=/${domain};SameSite=Lax`;
   };
@@ -200,32 +198,67 @@ export default function Home() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const updatePulseMarker = (coords: LngLat) => {
-      if (!mapRef.current || !window.mapboxgl) return;
+  const refreshMarkers = () => {
+      // Clear existing journey markers (Green/Red/Blue)
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
+
+      const wpOut = routeWaypointsOut.current;
+      const wpRet = routeWaypointsRet.current;
       
-      // Update existing marker instance for smoother mobile performance
-      if (pulseMarkerRef.current) {
-          pulseMarkerRef.current.setLngLat(coords);
+      // Strict Golden Pin Logic:
+      // - If ANY pickup location is selected (wpOut.pickup exists), the Golden Pin MUST be hidden.
+      // - If NO pickup is selected AND we have a user location, the Golden Pin MUST be shown.
+      const isPickupSet = !!wpOut.pickup;
+
+      if (isPickupSet) {
+          // Hide Golden Pin
+          if (pulseMarkerRef.current) {
+              pulseMarkerRef.current.remove();
+              pulseMarkerRef.current = null;
+          }
       } else {
-          const el = document.createElement('div');
-          el.className = 'marker-pulse';
-          // Store the Mapbox marker instance, not the DOM element
-          pulseMarkerRef.current = new window.mapboxgl.Marker(el)
-            .setLngLat(coords)
-            .addTo(mapRef.current);
+          // Show Golden Pin if user location available
+          if (userLocation) {
+              if (!pulseMarkerRef.current) {
+                  const el = document.createElement('div');
+                  el.className = 'marker-pulse';
+                  pulseMarkerRef.current = new window.mapboxgl.Marker(el)
+                      .setLngLat(userLocation)
+                      .addTo(mapRef.current);
+              } else {
+                  pulseMarkerRef.current.setLngLat(userLocation);
+                  if (!pulseMarkerRef.current.getElement().parentElement) {
+                      pulseMarkerRef.current.addTo(mapRef.current);
+                  }
+              }
+          }
+      }
+
+      // Add Journey Markers
+      if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); // Green
+      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444'); // Red
+      wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') }); // Blue
+
+      if (hasReturnTrip) {
+          if(wpRet.pickup) addMarker(wpRet.pickup, '#3b82f6');
+          if(wpRet.dropoff) addMarker(wpRet.dropoff, '#ef4444');
+          wpRet.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
       }
   };
 
   const handleLocationSuccess = (pos: GeolocationPosition) => {
     const coords: LngLat = [pos.coords.longitude, pos.coords.latitude];
     setUserLocation(coords);
-    
     setCookie('fare1_user_loc', JSON.stringify(coords), 7);
     
-    if (mapRef.current) {
+    // Initial Map Center if no pickup selected yet
+    if (mapRef.current && !routeWaypointsOut.current.pickup) {
       mapRef.current.flyTo({ center: coords, zoom: 14, essential: true });
-      updatePulseMarker(coords);
     }
+    
+    // Trigger marker refresh to show golden pin if appropriate
+    if (mapRef.current) refreshMarkers();
   };
 
   const triggerLocationCheck = (isManualRefresh = false) => {
@@ -256,7 +289,6 @@ export default function Home() {
 
   // --- Initialization & Effects ---
 
-  // Global Click Listener for suggestions
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -279,7 +311,6 @@ export default function Home() {
     setDate(now.toISOString().split('T')[0]);
     setTime(now.toTimeString().substring(0, 5));
 
-    // Scroll Listener for Menu & Header
     const handleScroll = () => {
       const currentScroll = window.scrollY;
       setIsScrolled(currentScroll > 20);
@@ -287,7 +318,6 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
 
-    // Lenis Smooth Scroll
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -304,14 +334,13 @@ export default function Home() {
     }
     requestAnimationFrame(raf);
 
-    // Initialize SINGLE Map
     if (window.mapboxgl && !mapRef.current) {
       window.mapboxgl.accessToken = MAPBOX_TOKEN;
       if (mapContainerRef.current) {
         mapRef.current = new window.mapboxgl.Map({
           container: mapContainerRef.current,
           style: 'mapbox://styles/mapbox/dark-v11',
-          center: [-1.4043, 50.9097], // Default: Southampton
+          center: [-1.4043, 50.9097],
           zoom: 11,
           attributionControl: false,
           pitchWithRotate: false
@@ -321,13 +350,16 @@ export default function Home() {
         mapRef.current.on('touchstart', () => mapRef.current?.dragPan.enable());
         
         mapRef.current.on('load', () => {
+            mapRef.current.resize(); // Fix for mobile rendering
             const locCookie = document.cookie.split('; ').find(row => row.startsWith('fare1_user_loc='));
             if (locCookie) {
                 try {
                     const savedLoc = JSON.parse(locCookie.split('=')[1]);
                     setUserLocation(savedLoc);
-                    mapRef.current.setCenter(savedLoc);
-                    updatePulseMarker(savedLoc);
+                    if (!routeWaypointsOut.current.pickup) {
+                        mapRef.current.setCenter(savedLoc);
+                        refreshMarkers(); // Ensure golden pin appears
+                    }
                 } catch(e) {}
             }
 
@@ -338,7 +370,6 @@ export default function Home() {
       }
     }
 
-    // Geolocation Request on Load
     triggerLocationCheck();
 
     enableDragScroll(vehicleContainerRef.current);
@@ -356,7 +387,6 @@ export default function Home() {
     };
   }, []);
 
-  // Return Trip Map Updates
   useEffect(() => {
     if (hasReturnTrip) {
         calculateRouteReturn();
@@ -370,7 +400,6 @@ export default function Home() {
     }
   }, [hasReturnTrip]);
 
-  // Vehicle Filtering
   useEffect(() => {
     const filtered = vehicles.filter(v => v.passengers >= pax && v.luggage >= bags);
     setFilteredVehicles(filtered);
@@ -379,24 +408,32 @@ export default function Home() {
     }
   }, [pax, bags]);
 
-  // Price Calculation
   useEffect(() => {
     updatePrice();
   }, [outDistanceMiles, retDistanceMiles, selectedVehicleIndex, meetGreet, returnMeetGreet, hasReturnTrip]);
 
-  // Visibility Logic
+  // Updated Visibility Logic with comprehensive dependencies
   useEffect(() => {
     checkVisibility();
   }, [
-      // Crucial: Track strings to trigger check when inputs change
       pickup, dropoff, returnPickup, returnDropoff,
-      // Existing dependencies
       hasReturnTrip, date, time, flightNumber, 
-      // Ensure Waypoint Refs (though stable) are checked when strings change
+      // Force check on routing changes
       routeWaypointsOut.current.pickup, routeWaypointsOut.current.dropoff
   ]);
 
-  // GSAP Animations
+  // Ensure map resizes correctly on window resize (fixes mobile address bar issues)
+  useEffect(() => {
+      const handleResize = () => mapRef.current?.resize();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Update map markers whenever userLocation changes (to show/hide golden pin)
+  useEffect(() => {
+      if (mapRef.current) refreshMarkers();
+  }, [userLocation]);
+
   useEffect(() => {
     const mm = gsap.matchMedia();
     mm.add("(min-width: 768px)", () => {
@@ -458,7 +495,6 @@ export default function Home() {
   const showPresets = (type: string) => {
     let list: SuggestionItem[] = [];
     
-    // Add My Current Location if available and it's a pickup field
     if ((type === 'pickup' || type === 'return-pickup') && userLocation) {
       list.push({ text: "📍 Use My Current Location", center: userLocation, name: "Current Location" });
     }
@@ -477,7 +513,6 @@ export default function Home() {
   };
 
   const handleTyping = (type: string, value: string) => {
-    // Reset coords logic
     if (type === 'pickup') routeWaypointsOut.current.pickup = null;
     if (type === 'dropoff') routeWaypointsOut.current.dropoff = null;
     if (type.startsWith('stop-') && !type.includes('return')) {
@@ -489,6 +524,11 @@ export default function Home() {
     if (type.startsWith('stop-return-')) {
         const idx = parseInt(type.split('-')[2]) - 1;
         routeWaypointsRet.current.stops[idx] = null;
+    }
+
+    // Refresh markers immediately on clear to potentially show golden pin
+    if (type === 'pickup' && !value) {
+        refreshMarkers();
     }
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -597,28 +637,14 @@ export default function Home() {
       markersRef.current.push(marker);
   };
 
-  const clearMarkers = () => {
-      markersRef.current.forEach(m => m.remove());
-      markersRef.current = [];
-  };
-
-  const refreshMarkers = () => {
-      clearMarkers();
-      const wpOut = routeWaypointsOut.current;
-      const wpRet = routeWaypointsRet.current;
-
-      if(wpOut.pickup) addMarker(wpOut.pickup, '#22c55e'); 
-      if(wpOut.dropoff) addMarker(wpOut.dropoff, '#ef4444');
-      wpOut.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
-
-      if (hasReturnTrip) {
-          if(wpRet.pickup) addMarker(wpRet.pickup, '#3b82f6');
-          if(wpRet.dropoff) addMarker(wpRet.dropoff, '#ef4444');
-          wpRet.stops.forEach(s => { if(s) addMarker(s, '#3b82f6') });
-      }
-  };
-
   const calculateRouteOut = () => {
+    // If we only have a pickup, just refresh markers to show the Green pin instead of Golden
+    if (routeWaypointsOut.current.pickup && !routeWaypointsOut.current.dropoff) {
+        refreshMarkers();
+        if (mapRef.current) mapRef.current.flyTo({ center: routeWaypointsOut.current.pickup, zoom: 14 });
+        return;
+    }
+
     if (!routeWaypointsOut.current.pickup || !routeWaypointsOut.current.dropoff || !mapRef.current) return;
     
     let coords: LngLat[] = [routeWaypointsOut.current.pickup];
@@ -640,10 +666,12 @@ export default function Home() {
       if (mapRef.current.getSource(layerId)) {
         mapRef.current.getSource(layerId).setData(r.geometry);
       } else {
-        mapRef.current.addLayer({
-            id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
-            paint: { 'line-color': '#D4AF37', 'line-width': 5, 'line-opacity': 0.9 }
-        });
+        if (!mapRef.current.getLayer(layerId)) {
+            mapRef.current.addLayer({
+                id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
+                paint: { 'line-color': '#D4AF37', 'line-width': 5, 'line-opacity': 0.9 }
+            });
+        }
       }
       refreshMarkers();
       updateMapBounds();
@@ -671,10 +699,12 @@ export default function Home() {
       if (mapRef.current.getSource(layerId)) {
         mapRef.current.getSource(layerId).setData(r.geometry);
       } else {
-        mapRef.current.addLayer({
-            id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
-            paint: { 'line-color': '#60a5fa', 'line-width': 4, 'line-opacity': 0.8, 'line-dasharray': [2, 1] }
-        });
+        if (!mapRef.current.getLayer(layerId)) {
+            mapRef.current.addLayer({
+                id: layerId, type: 'line', source: { type: 'geojson', data: r.geometry },
+                paint: { 'line-color': '#60a5fa', 'line-width': 4, 'line-opacity': 0.8, 'line-dasharray': [2, 1] }
+            });
+        }
       }
       refreshMarkers();
       updateMapBounds();
