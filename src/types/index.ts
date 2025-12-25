@@ -1,4 +1,3 @@
-
 export type LngLat = [number, number];
 
 export interface PresetItem {
@@ -13,6 +12,12 @@ export interface SuggestionItem {
   name?: string;
 }
 
+export interface RouteWaypoints {
+  pickup: LngLat | null;
+  dropoff: LngLat | null;
+  stops: (LngLat | null)[];
+}
+
 export interface Vehicle {
   name: string;
   image: string;
@@ -21,12 +26,6 @@ export interface Vehicle {
   passengers: number;
   luggage: number;
   description: string;
-}
-
-export interface RouteWaypoints {
-  pickup: LngLat | null;
-  dropoff: LngLat | null;
-  stops: (LngLat | null)[];
 }
 
 export interface BookingState {
@@ -39,6 +38,7 @@ export interface BookingState {
   meetGreet: boolean;
   pax: number;
   bags: number;
+  
   // Return Trip
   hasReturnTrip: boolean;
   returnPickup: string;
@@ -50,9 +50,22 @@ export interface BookingState {
   returnMeetGreet: boolean;
 }
 
-export interface RouteData {
-  distanceMiles: number;
-  durationSeconds: number;
-  durationText: string;
-  geometry: any; // GeoJSON
+export interface PricingState {
+  outDistanceMiles: number;
+  retDistanceMiles: number;
+  totalPrice: number;
+  oldPrice: number;
+  oldPriceVisible: boolean;
+  promoText: string;
+  promoClass: string;
+  distanceDisplay: string;
+  distanceHidden: boolean;
+}
+
+// Global window extension for Mapbox/Google
+declare global {
+  interface Window {
+    mapboxgl: any;
+    google: any;
+  }
 }
