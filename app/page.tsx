@@ -5,10 +5,10 @@ import Lenis from '@studio-freight/lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-import { useBookingLogic } from '../hooks/useBookingLogic';
-import Header from '../components/Header';
-import MapContainer from '../components/booking/MapContainer';
-import BookingForm from '../components/booking/BookingForm';
+import { useBookingLogic } from './hooks/useBookingLogic';
+import Header from './components/Header';
+import MapContainer from './components/booking/MapContainer';
+import BookingForm from './components/booking/BookingForm';
 
 gsap.registerPlugin(ScrollTrigger);
 

@@ -145,6 +145,7 @@ const MapContainer = ({
     }
 
   }, [outGeometry, retGeometry, userLocation, hasReturnTrip, waypointsOut, waypointsRet]); 
+  // Note: waypointsOut/Ret are refs, so this effect depends on the parent passing new logic or the geometries changing.
 
   return (
     <div className="fixed inset-0 h-[45vh] z-0">
