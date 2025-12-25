@@ -1,6 +1,7 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { LngLat, BookingState, RouteWaypoints, RouteData, SuggestionItem, Vehicle } from '@/types';
-import { VEHICLES, MAPBOX_TOKEN, MAX_STOPS, PRESET_DATA } from '@/lib/constants';
+import { LngLat, BookingState, RouteWaypoints, RouteData, SuggestionItem, Vehicle } from '../types';
+import { VEHICLES, MAPBOX_TOKEN, MAX_STOPS, PRESET_DATA } from '../lib/constants';
 
 export const useBookingLogic = () => {
   // --- State ---

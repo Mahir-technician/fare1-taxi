@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { BookingState, SuggestionItem, Vehicle, RouteData } from '@/types';
-import { MAX_STOPS } from '@/lib/constants';
+import { BookingState, SuggestionItem, Vehicle, RouteData } from '../../types';
+import { MAX_STOPS } from '../../lib/constants';
 
 interface BookingFormProps {
   form: BookingState;

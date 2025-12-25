@@ -1,8 +1,8 @@
 
 import React, { useEffect, useRef, memo } from 'react';
 import mapboxgl from 'mapbox-gl';
-import { MAPBOX_TOKEN } from '@/lib/constants';
-import { LngLat, RouteWaypoints } from '@/types';
+import { MAPBOX_TOKEN } from '../../lib/constants';
+import { LngLat, RouteWaypoints } from '../../types';
 
 interface MapContainerProps {
   userLocation: LngLat | null;
