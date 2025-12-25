@@ -1,8 +1,8 @@
 
 import React, { useRef } from 'react';
-import { BookingState, SuggestionItem, Vehicle } from '@/types';
-import { VEHICLES, MAX_STOPS } from '@/lib/constants';
-import { useClickOutside } from '@/hooks/useClickOutside';
+import { BookingState, SuggestionItem, Vehicle } from '../../types';
+import { VEHICLES, MAX_STOPS } from '../../lib/constants';
+import { useClickOutside } from '../../hooks/useClickOutside';
 
 interface BookingFormProps {
   form: BookingState;

@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { LngLat, RouteWaypoints, SuggestionItem, BookingState, PricingState, Vehicle } from '@/types';
-import { MAPBOX_TOKEN, PRESET_DATA, VEHICLES, MAX_STOPS } from '@/lib/constants';
+import { LngLat, RouteWaypoints, SuggestionItem, BookingState, PricingState, Vehicle } from '../types';
+import { MAPBOX_TOKEN, PRESET_DATA, VEHICLES, MAX_STOPS } from '../lib/constants';
 
 export const useBookingLogic = () => {
   // --- Core Form State ---

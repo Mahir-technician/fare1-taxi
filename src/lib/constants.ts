@@ -1,5 +1,5 @@
 
-import { PresetItem, Vehicle } from '@/types';
+import { PresetItem, Vehicle } from '../types';
 
 export const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFyZTFsdGQiLCJhIjoiY21pcnN4MWZlMGhtcDU2c2dyMTlvODJoNSJ9.fyUV4gMDcEBgWZnQfxS7XA';
 

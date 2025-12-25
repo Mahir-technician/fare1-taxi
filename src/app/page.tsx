@@ -5,11 +5,11 @@ import Lenis from '@studio-freight/lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-import Header from '@/components/Header';
-import MapContainer from '@/components/booking/MapContainer';
-import BookingForm from '@/components/booking/BookingForm';
-import { useBookingLogic } from '@/hooks/useBookingLogic';
-import { VEHICLES, DISCOUNT_MESSAGES } from '@/lib/constants';
+import Header from '../components/Header';
+import MapContainer from '../components/booking/MapContainer';
+import BookingForm from '../components/booking/BookingForm';
+import { useBookingLogic } from '../hooks/useBookingLogic';
+import { VEHICLES, DISCOUNT_MESSAGES } from '../lib/constants';
 
 export default function Home() {
   gsap.registerPlugin(ScrollTrigger);
